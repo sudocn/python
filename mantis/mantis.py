@@ -140,7 +140,23 @@ def sort_by_user(mlist):
     return sorted(result, key = lambda x: len(x[1]), reverse = True)
 
 def sort_by_time(mlist):
-    pass           
+    idx = col('Date Submitted')
+    now = datetime.datetime.now().date()
+    
+    datelist = [[x[0], datetime.datetime.strptime(x[idx], "%Y-%m-%d").date()] for x in mlist]
+        
+    ot90 = []
+    ot30 = []
+    ot14 = []
+    newly = []
+    
+    for i in datelist:
+        if (now - i[1]).days > 90: ot90.append(i[0])
+        elif (now - i[1]).days > 30: ot30.append(i[0])
+        elif (now - i[1]).days > 14: ot14.append(i[0])
+        else: newly.append(i[0])
+    
+    return ['> 3 months',ot90], ['> 1 month',ot30], ['> 2 weeks',ot14], ['< 2 weeks',newly]
 
 def get_diff(now, prev):
     now_set = set([x[0] for x in now])
@@ -187,6 +203,14 @@ def gen_report(mlist, diff, html=True):
         report.write_text("\n\nIssues by owner", True)
         report.spliter()
         report_platform_html(mlist, u, report)
+        
+    t = sort_by_time(mlist)
+    if html:
+        report.write_text('')
+        report.write_text("\n\nIssues by age", True)
+        report.spliter()
+        report_platform_html(mlist, t, report)
+        
     
     if html: report.close()
     sio.seek(0)
