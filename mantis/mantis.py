@@ -100,7 +100,7 @@ def format_html_row(mlist, id, report):
     header=['Id', 'Assigned To', 'Summary', 'Project']
     ids = field2index(table_header, header)
     line = find_bug_by_id(mlist, id)
-    report.table_create_row((line[ids[0]], line[ids[1]], line[ids[2]], line[ids[3]]))
+    report.table_create_row((line[ids[0]], line[ids[1]], line[ids[2]], line[ids[3]].replace('_',' ')))
 
 def format_html_table(mlist, ids, report):
     report.table_open()
@@ -175,7 +175,7 @@ def gen_report(mlist, diff, html=True):
     if html:
         report.write_text("\nSummary", True)
         report.spliter()
-        report.write_text("%d high priority issues\n" % (len(mlist)), True)
+        report.write_text("\n%d high priority issues\n" % (len(mlist)), True)
         new, removed = diff
         #report.write_text("New issues: %d\n" % (len(new)))
         if len(removed):
@@ -198,7 +198,7 @@ def gen_report(mlist, diff, html=True):
         pass
     #
     u = sort_by_user(mlist)
-    if False: #html:
+    if html:
         report.write_text('')
         report.write_text("\n\nIssues by owner", True)
         report.spliter()

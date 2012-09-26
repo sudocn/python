@@ -10,12 +10,17 @@ html_start="""\
     <title>Mail</title>
     <meta content="text/html; charset=GB2312" http-equiv="Content-Type">
   </head>
-  <body bgcolor="#FFFFFF" text="#000000">
+  <body style="background-color:#FFFFFF; color:#000000; font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt; margin: 6px 4px;">
   <p>Hi, All,</p>
   
   <center><H3>High priority issue list</H3></center>
 """
 html_end="""\
+    <p>
+    --<br>
+    Regards,<br>
+    cpeng
+    </p>
   </body>
 </html>
 """
@@ -38,19 +43,19 @@ class HtmlReport():
         self._fp.write(html_end)
         
     def table_open(self):
-        self._fp.write('    <table id="buglist" class="width100" cellspacing="1">\r\n')
-        self._fp.write('      <tbody>\r\n')
+        self._fp.write('    <table id="buglist" style="width: 100%; " cellspacing="1">\r\n') #border: solid 1px #000000;
+#        self._fp.write('      <tbody>\r\n')
 
     def table_close(self):
-        self._fp.write('      </tbody>\r\n')
+#        self._fp.write('      </tbody>\r\n')
         self._fp.write('    </table>\r\n')
 
     def table_create_row(self, row):
-        self._fp.write('        <tr border="1" bgcolor="#c8c8ff">\r\n')
+        self._fp.write('        <tr style="font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt; padding: 4px; text-align: left;" border="1" bgcolor="#c8c8ff">\r\n')
         self._fp.write('  <td><a href="http://10.1.8.23/mantis/view.php?id={0}">{0}</a></td>\r\n'.format(row[0]))
-        self._fp.write('  <td class="center">{}</td>\r\n'.format(row[1]))
-        self._fp.write('  <td class="left">{}</td>\r\n'.format(html.escape(row[2])))
-        self._fp.write('  <td>{}</td>'.format(html.escape(row[3])))
+        self._fp.write('  <td align="center">{}</td>\r\n'.format(row[1]))
+        self._fp.write('  <td align="left">{}</td>\r\n'.format(html.escape(row[2])))
+        self._fp.write('  <td align="center">{}</td>'.format(html.escape(row[3])))
         self._fp.write('        </tr>\r\n')
         
     def write_text(self, line='', bold=False):
@@ -62,8 +67,9 @@ class HtmlReport():
         self._fp.write('\r\n')
     
     def wirte_bug_list(self, bugs):
-        for b in bugs:
-            self._fp.write('    <a href="http://10.1.8.23/mantis/view.php?id={0}">{0}</a>\r\n'.format(b))
+        for i,v in enumerate(bugs):
+            if i != 0: self._fp.write(',')
+            self._fp.write('    <a href="http://10.1.8.23/mantis/view.php?id={0}">{0}</a>\r\n'.format(v))
     
     def spliter(self):
-        self._fp.write('<hr/>')
+        self._fp.write('<hr align=left width=35% size=1 noshade />\r\n')
