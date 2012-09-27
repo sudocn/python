@@ -41,7 +41,10 @@ def add_cookie(ckjar):
     #a["MANTIS_BUG_LIST_COOKIE"] = r"7935%2C9709%2C5435%2C9634%2C5218%2C9795%2C9794%2C9793%2C9792%2C9791%2C9790%2C9402%2C8249%2C9788%2C9789%2C9685%2C9722%2C9787%2C9783%2C8255%2C9786%2C9554%2C9785%2C8254%2C9784%2C9184%2C9782%2C9781%2C9473%2C9726%2C9780%2C8719%2C9684%2C9178%2C9779%2C9778%2C8728%2C9696%2C9627%2C9527%2C9671%2C9040%2C9777%2C9723%2C9731%2C8759%2C9694%2C9573%2C9771%2C8533"
        
 def wget2():
-    post={'username':'cpeng', 'password':'lInux!@#'}
+    with open(".passwd") as f:
+        user,passwd = eval(f.readline())
+
+    post={'username':user, 'password':passwd}
     
     #cookie = urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     ckjar = http.cookiejar.CookieJar()

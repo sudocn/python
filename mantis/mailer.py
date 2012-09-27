@@ -24,10 +24,13 @@ def send(msg):
     msg['From'] = fromaddr
     msg['To'] = toaddrs
     #msg['Cc'] = ccaddrs
+
+    with open(".passwd") as f:
+        user,passwd = eval(f.readline())
     
     server = smtplib.SMTP_SSL('mailbj.augustatek.com.cn')
     server.set_debuglevel(1)
-    server.login('cpeng','lInux!@#')
+    server.login(user, passwd)
     server.send_message(msg)
     server.quit()
 

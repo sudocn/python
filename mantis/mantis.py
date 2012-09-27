@@ -178,7 +178,7 @@ def gen_report(mlist, diff, html=True):
         report.write_text("\n%d high priority issues\n" % (len(mlist)), True)
         new, removed = diff
         #report.write_text("New issues: %d\n" % (len(new)))
-        if len(removed):
+        if len(new):
             report_platform_html(mlist, [('New issues added into list', new)], report)
         report.write_text("\nIssues removed from list (fixed, feedback, transfered): %d\n" % (len(removed)))
         if len(removed):
