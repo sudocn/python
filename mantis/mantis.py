@@ -118,7 +118,7 @@ def sort_by_platform(mlist):
     idx = col('Project') 
     
     showstp = [x[0] for x in mlist if 'howstopper' in x[idx]]
-    gbread = [x[0] for x in mlist if x[idx].startswith('ATgingerbread') or '2.3.7' in x[idx]]
+    gbread = [x[0] for x in mlist if 'gingerbread' in x[idx] or '2.3.7' in x[idx]]
     t11_ics = [x[0] for x in mlist if 'T11' in x[idx]]
     g01_ics = [x[0] for x in mlist if 'ICS' in x[idx]]
     
