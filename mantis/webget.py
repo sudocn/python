@@ -9,27 +9,38 @@ LOGIN_URL=r'http://10.1.8.23/mantis/login.php'
 #BUG_URL=r"http://10.1.8.23/mantis/search.php?project_id=0&status_id%5B%5D=10&status_id%5B%5D=20&status_id%5B%5D=30&status_id%5B%5D=40&status_id%5B%5D=50&handler_id%5B%5D=105&handler_id%5B%5D=18&handler_id%5B%5D=216&handler_id%5B%5D=217&handler_id%5B%5D=199&handler_id%5B%5D=195&handler_id%5B%5D=229&handler_id%5B%5D=64&handler_id%5B%5D=41&handler_id%5B%5D=57&handler_id%5B%5D=20&handler_id%5B%5D=74&handler_id%5B%5D=167&handler_id%5B%5D=86&handler_id%5B%5D=50&priority_id%5B%5D=40&priority_id%5B%5D=50&priority_id%5B%5D=60&sticky_issues=on&sortby=status&dir=DESC&hide_status_id=-2"
 #BUG_URL=r"http://10.1.8.23/mantis/search.php?status_id=50&sticky_issues=1&sortby=last_updated&dir=DESC&hide_status_id=90"
 #BUG_URL=r"http://10.1.8.23/mantis/search.php?project_id=0&status_id=50&priority_id%5B%5D=40&priority_id%5B%5D=50&priority_id%5B%5D=60&sticky_issues=on&sortby=status&dir=DESC&hide_status_id=-2"
-BUG_URL=r'http://10.1.8.23/mantis/view_all_set.php?type=3&source_query_id=1751'
+#BUG_URL=r'http://10.1.8.23/mantis/view_all_set.php?type=3&source_query_id=1751'
+BUG_URL=r'http://10.1.8.23/mantis/view_all_bug_page.php'
 CSV_URL=r"http://10.1.8.23/mantis/csv_export.php"
 
 ''' hacks for Mantis server
     The permalink create by Mantis server did not get all the bug lists
     Need add some cookie contents
 '''
-def add_cookie(ckjar):
+cookie1=[["MANTIS_VIEW_SETTINGS","255"], \
+         ["MANTIS_PROJECT_COOKIE","0"], \
+		 ["MANTIS_VIEW_ALL_COOKIE","94"], \
+		 ["MANTIS_BUG_LIST_COOKIE",r"7935%2C9709%2C5435%2C9634%2C5218%2C9795%2C9794%2C9793%2C9792%2C9791%2C9790%2C9402%2C8249%2C9788%2C9789%2C9685%2C9722%2C9787%2C9783%2C8255%2C9786%2C9554%2C9785%2C8254%2C9784%2C9184%2C9782%2C9781%2C9473%2C9726%2C9780%2C8719%2C9684%2C9178%2C9779%2C9778%2C8728%2C9696%2C9627%2C9527%2C9671%2C9040%2C9777%2C9723%2C9731%2C8759%2C9694%2C9573%2C9771%2C8533"]]
+
+cookie2=[["MANTIS_VIEW_SETTINGS","255"], \
+         ["MANTIS_PROJECT_COOKIE",r"95%3B102"], \
+		 ["MANTIS_VIEW_ALL_COOKIE","2228"], \
+		 ["MANTIS_BUG_LIST_COOKIE",r"12004%2C11810%2C11679%2C11890%2C11288%2C10538%2C11928%2C11994%2C10911"]]
+		 
+def add_cookie(ckjar, cookie):
     a = ckjar._cookies["10.1.8.23"]["/"]
     ck1 = copy.deepcopy(a["MANTIS_STRING_COOKIE"])
-    ck1.name = "MANTIS_VIEW_SETTINGS"
-    ck1.value = "255"
+    ck1.name = cookie[0][0]
+    ck1.value = cookie[0][1]
     ck2 = copy.deepcopy(ck1)
-    ck2.name = "MANTIS_PROJECT_COOKIE"
-    ck2.value = "0"
+    ck2.name = cookie[1][0]
+    ck2.value = cookie[1][1]
     ck3 = copy.deepcopy(ck1)
-    ck3.name = "MANTIS_VIEW_ALL_COOKIE"
-    ck3.value = "94"
+    ck3.name = cookie[2][0]
+    ck3.value = cookie[2][1]
     ck4 = copy.deepcopy(ck1)
-    ck4.name = "MANTIS_BUG_LIST_COOKIE"
-    ck4.value = r"7935%2C9709%2C5435%2C9634%2C5218%2C9795%2C9794%2C9793%2C9792%2C9791%2C9790%2C9402%2C8249%2C9788%2C9789%2C9685%2C9722%2C9787%2C9783%2C8255%2C9786%2C9554%2C9785%2C8254%2C9784%2C9184%2C9782%2C9781%2C9473%2C9726%2C9780%2C8719%2C9684%2C9178%2C9779%2C9778%2C8728%2C9696%2C9627%2C9527%2C9671%2C9040%2C9777%2C9723%2C9731%2C8759%2C9694%2C9573%2C9771%2C8533"
+    ck4.name = cookie[3][0]
+    ck4.value = cookie[3][1]
  
     ckjar.set_cookie(ck1)
     ckjar.set_cookie(ck2) 
@@ -63,7 +74,7 @@ def wget2():
     print(data)
     
     # Modify the cookies
-    add_cookie(ckjar)
+    add_cookie(ckjar, cookie2)
     
     r2 = urllib.request.urlopen(BUG_URL)
     data = r2.read().decode()
