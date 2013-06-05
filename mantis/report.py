@@ -13,7 +13,7 @@ html_start="""\
   <body style="background-color:#FFFFFF; color:#000000; font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt; margin: 6px 4px;">
   <p>Hi, All,</p>
   
-  <center><H3>Mantis status daily update</H3></center>
+  <center><H3>Mantis status weekly update</H3></center>
 """
 html_end="""\
     <p>
@@ -33,6 +33,8 @@ bgcolors = {"new":"#fcbdbd",
             "verified":"#ACE7AE",
             "suspended":"#e8e8e8",
             "closed":"#c9ccc4"}
+
+record = ["Owner", "Status", "Id", "Summary"]
 
 class HtmlReport():
     def __init__(self, fp):
@@ -60,12 +62,12 @@ class HtmlReport():
         self._fp.write('    </table>\r\n')
 
     def table_create_row(self, row):
-        self._fp.write('        <tr style="font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt; padding: 4px; text-align: left;" border="1" bgcolor="%s">\r\n'%bgcolors[row[4]])
-        self._fp.write('  <td><a href="http://10.1.8.23/mantis/view.php?id={0}">{0}</a></td>\r\n'.format(row[0]))
-        self._fp.write('  <td align="center">{}</td>\r\n'.format(row[1]))
-        self._fp.write('  <td align="center">{}</td>\r\n'.format(html.escape(row[2])))
-        self._fp.write('  <td align="left">{}</td>\r\n'.format(html.escape(row[3])))
-        self._fp.write('  <td align="left">{}</td>'.format(html.escape(row[4])))
+        self._fp.write('        <tr style="font-family: Verdana, Arial, Helvetica, sans-serif; font-size: 10pt; padding: 4px; text-align: left;" border="1" bgcolor="%s">\r\n'%bgcolors[row[2]])
+        self._fp.write('  <td align="center">{}</td>\r\n'.format(html.escape(row[0])))
+        self._fp.write('  <td align="left">{}</td>'.format(html.escape(row[1])))
+        self._fp.write('  <td align="center">{}</td>\r\n'.format(row[2]))
+        self._fp.write('  <td><a href="http://10.1.8.23/mantis/view.php?id={0}">{0}</a></td>\r\n'.format(row[3]))
+        self._fp.write('  <td align="left">{}</td>\r\n'.format(html.escape(row[4])))
         self._fp.write('        </tr>\r\n')
         
     def write_text(self, line='', bold=False):

@@ -78,7 +78,7 @@ def wget2():
     
     r2 = urllib.request.urlopen(BUG_URL)
     data = r2.read().decode()
-    print(data)
+    #print(data)
 
     r3 = urllib.request.urlopen(CSV_URL)
     csv = r3.read().decode()
