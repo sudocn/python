@@ -9,6 +9,7 @@ distribution = {}
 alloc_log =[]
 usage_pattern = []
 
+log_file=r'C:\Documents and Settings\cpeng\Desktop\QALog\Memory share-Zhouqinglan\2.mem.log'
 fout = open("d:\\mem_alloc.log", "w")
 
 def log_alloc(log, line, action):
@@ -71,10 +72,10 @@ def parse_alloc_log():
     return seq
                 
     
-log_file=r'C:\Documents and Settings\cpeng\Desktop\QALog\memory 8\log1.mem.txt'
+#log_file=r'C:\Documents and Settings\cpeng\Desktop\QALog\memory 8\log1.mem.txt'
 log = []
 with open(log_file, 'r') as f:
-   for line in f:
+    for line in f:
         i = line.find('dma_alloc_coherent:')
         if i != -1:
             log_alloc(log, line[i+20:], 'a')
@@ -84,7 +85,8 @@ with open(log_file, 'r') as f:
             log_alloc(log, line[i+10:], 'f')
 
 fout.close()
-print("peak %d pages(%.1fM), mem %d(%.1fM)" % (peak, peak/256.0, mem, mem/256.0))
+print("peak %d pages(%.1fM), mem %d(%.1fM)" % 
+      (peak, peak/256.0, mem, mem/256.0))
 #print("=========usage=============")
 #for l in alloc_log:
 #    print(l)
