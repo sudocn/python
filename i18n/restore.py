@@ -9,29 +9,39 @@ out_root =  r"C:\Documents and Settings\cpeng\Desktop\out-resources"
 translated_text=r"D:\translation 20130606-Hindi.txt"
 
 def translate_element(e, dc):
-    def do_string(e, dc):
-        name = e.attrib["name"]
-        if name not in dc:
-            return False
-        
-        if len(e) == 0:  #simple string
+    def translate_text(e, name, dc):
+        if len(e) == 0: #simple string
             e.text = dc.get(name)
         else:
             xml = dc.get(name)
-            text = etree.tostring(e, encoding ="unicode", method="xml")
+            text = etree.tostring(e, encoding="unicode", method="xml")
             start = text.index(">")
             end = text.rindex("<")
-            text = text[:start+1] + xml + text[end:]
+            text = text[:start + 1] + xml + text[end:]
             new = etree.XML(text)
-            
             for s in e:
-                e.remove(s)
+                e.remove(s)            
             e.extend(list(new))
+
+    def do_string(e, dc):
+        name = e.attrib["name"]
+        if "product" in e.attrib:
+            name += ".product." + e.attrib["product"]
+        if name not in dc:
+            print("!!!Warning: name " + name + " not found in translated list !!!")
+            return False
+        
+        translate_text(e, name, dc)
         return True
     
     def do_string_array(e, dc):
-        print("string array not implemented!")
-        pass
+        prefix = "array." + e.attrib["name"]
+        index = 0
+        for item in e:
+            if item.tag == "item":
+                name = prefix + "." + str(index)
+                translate_text(item, name, dc)
+                index += 1
     
     def do_plurals(e, dc):
         print("plurals not implemented!")
@@ -75,19 +85,20 @@ def partial_translate(inpath, refpath, outpath, dc):
         if "." in id: # needs transform
             if ".product." in id:
                 ss = id.split(".", 3)
-                xpath = "string[@name='%s'][@product='%s']"% (ss[0],ss[2])
+                xpath = "/string[@name='%s'][@product='%s']"% (ss[0],ss[2])
                 e = tree.find(xpath)
             elif id.startswith("array."):
                 ss = id.split(".", 3)
-                xpath = "string-array[@name='%s']"%ss[1]
+                xpath = "/string-array[@name='%s']"%ss[1]
                 e = tree.find(xpath)
             elif id.startswith("plurals."):
                 #TODO
                 print("!!! ERROR: plurals not supported yet !!!")
             else:
                 print("!!! complex representation !!! " + id)
+                raise NotImplementedError
         else:
-            xpath = "string[@name='%s']"%id
+            xpath = "/string[@name='%s']"%id
             e = tree.find(xpath)
         return e
     
@@ -95,15 +106,20 @@ def partial_translate(inpath, refpath, outpath, dc):
     tree1 = etree.parse(inpath)
     for id in inc:
         elem = find_elem_by_id(tree1, id)
-        if not elem is None:
+        if (elem is None) or (elem in appendix):
+            pass
+        else:
+            elem.tail = '\n    '
             appendix.append(elem)
     
     for e in appendix:
-        pass#translate_element(e, dc)
+        translate_element(e, dc)
                 
     tree2 = etree.parse(refpath)
+    tree2.getroot()[-1].tail = '\n    '
     tree2.getroot().extend(appendix)
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
+    tree2.getroot()[-1].tail = '\n'
     tree2.write(outpath, encoding="utf-8", xml_declaration=True, method="xml")
    
     
