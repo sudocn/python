@@ -4,7 +4,7 @@ from common import extract_xml
 import csv
 
 res_root = r"C:\Documents and Settings\cpeng\Desktop\string-resources"
-language_array = ["values", "values-zh-rCN", "values-hi"]
+languages = ["values", "values-zh-rCN", "values-hi"]
 fp = open("d:\\ttt.csv", mode="w", newline="", encoding="utf-8")
 csv_writer = csv.writer(fp, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
@@ -24,47 +24,40 @@ def find_files():
             print(os.path.join(rel_path, f))
 
 # 3 way dictionary merge 
-def merge_dict3(dict1, dict2, dict3):
+def merge_dict3(dict0, dict1, dict2):
     dc = {}
-    for key in dict1:
-        v1 = dict1[key]
-        if key in dict2: 
-            v2 = dict2[key]
-            del dict2[key] 
-        else: 
-            v2 = ""
-        if key in dict3: 
-            v3 = dict3[key]
-            del dict3[key] 
-        else: 
-            v3 = ""
-        dc[key] = [v1, v2, v3]    
+    for key in dict0:
+        dc[key] = [dict0[key], dict1.get(key,""), dict2.get(key,"")]    
     
-    if len(dict2) > 0 or len(dict3) > 0:
-        print("!!!Warning: unique string names in Non-English resources")
-        if len(dict2) > 0: print(dict2.keys())
-        if len(dict3) > 0: print(dict3.keys())
+    # strings exist in Non-English resources but no in 
+    # English resource are obsoleted resources.
+    for i,d in enumerate((dict1, dict2)):
+        obsoleted = d.keys() - dict0.keys()
+        if len(obsoleted) > 0:
+            print("!!!Warning: unique string names in Non-English resources: " + languages[i+1])
+            print(obsoleted)
+
     return dc
                 
 def process_app(base, res):
-    csv_writer.writerow([])
-    csv_writer.writerow([res])
     flist = os.listdir(os.path.join(base, res, 'values'))
     print(flist)
     for f in flist:
+        csv_writer.writerow([])
+        csv_writer.writerow([res])
         csv_writer.writerow([f])
         # English
         abspath = os.path.join(base, res, "values", f)
-        dict_en = extract_xml(abspath)
+        dict0 = extract_xml(abspath)
         # Chinese
-        abspath = os.path.join(base, res, "values-zh-rCN", f)
-        dict_zh = extract_xml(abspath)
+        abspath = os.path.join(base, res, languages[1], f)
+        dict1 = extract_xml(abspath)
         # Hindi
-        abspath = os.path.join(base, res, "values-hi", f)
-        dict_hi = extract_xml(abspath)
+        abspath = os.path.join(base, res, languages[2], f)
+        dict2 = extract_xml(abspath)
         
-        dict_all = merge_dict3(dict_en, dict_zh, dict_hi)
-        for k in dict_all:
+        dict_all = merge_dict3(dict0, dict1, dict2)
+        for k in sorted(dict_all):
             it = dict_all[k]
             #print('%s, "%s", "%s", "%s"'%(k,it[0],it[1],it[2]), file=fp)
             #print(k,it, file=fp)
@@ -76,6 +69,7 @@ def main():
     apps = find_dirs(res_root)
     for d in apps:
         print(d)
+        #if "Camera" in d:
         process_app(res_root, d)
     #process_app(res_root, r"frameworks\base\core\res\res")
     fp.close()
