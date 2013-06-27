@@ -24,15 +24,15 @@ def find_files():
             print(os.path.join(rel_path, f))
 
 # 3 way dictionary merge 
-def merge_dict3(dict0, dict1, dict2):
+def merge_dicts(*dicts):
     dc = {}
-    for key in dict0:
-        dc[key] = [dict0[key], dict1.get(key,""), dict2.get(key,"")]    
+    for key in dicts[0]:
+        dc[key] = [x.get(key,"") for x in dicts]    
     
     # strings exist in Non-English resources but no in 
     # English resource are obsoleted resources.
-    for i,d in enumerate((dict1, dict2)):
-        obsoleted = d.keys() - dict0.keys()
+    for i,d in enumerate(dicts[1:]):
+        obsoleted = d.keys() - dicts[0].keys()
         if len(obsoleted) > 0:
             print("!!!Warning: unique string names in Non-English resources: " + languages[i+1])
             print(obsoleted)
@@ -46,18 +46,22 @@ def process_app(base, res):
         csv_writer.writerow([])
         csv_writer.writerow([res])
         csv_writer.writerow([f])
-        # English
-        abspath = os.path.join(base, res, "values", f)
-        dict0 = extract_xml(abspath)
-        # Chinese
+
+        dicts = []
+        for lang in languages:
+            abspath = os.path.join(base, res, lang, f)
+            dicts.append(extract_xml(abspath))
+
+        '''
         abspath = os.path.join(base, res, languages[1], f)
         dict1 = extract_xml(abspath)
-        # Hindi
+
         abspath = os.path.join(base, res, languages[2], f)
         dict2 = extract_xml(abspath)
-        
-        dict_all = merge_dict3(dict0, dict1, dict2)
-        for k in sorted(dict_all):
+        '''
+           
+        dict_all = merge_dicts(*dicts)
+        for k in sorted(dict_all.keys()):
             it = dict_all[k]
             #print('%s, "%s", "%s", "%s"'%(k,it[0],it[1],it[2]), file=fp)
             #print(k,it, file=fp)

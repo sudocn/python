@@ -17,26 +17,6 @@ def extract_text(e, parent_name, dc):
     if len(e) == 0: # No sub-element
         return normalize_text(e.text)
     else:
-        if e.tag == "string":
-            #print(e.attrib["name"] + " " + str(len(e)))
-            pass
-        elif e.tag == "item":
-            #print(parent_name + " " + str(len(e)))
-            pass  
-        # xliff parsing
-        '''
-        for sub in e:
-            if sub.tag in ("font", "b", "u") : continue
-            index = 0
-            try:
-                name = parent_name + ".xliff." + sub.attrib["id"].lower()
-            except:
-                print(ET.tostring(e))
-                name = parent_name + ".xliff." + str(index)
-                index += 1
-            #print(name)
-            dc[name] = normalize_text(sub.tail)
-        '''
         text = ET.tostring(e, encoding="unicode")
         start = text.index(">")
         end = text.rindex("<")
