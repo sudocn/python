@@ -90,6 +90,10 @@ def extract_xml(f):
     tree = ET.parse(f)
     root = tree.getroot()
     for child in root:
+        if "translatable" in child.attrib:
+            if child.attrib["translatable"].lower() == "false":
+                print("W: Ignore non-translatable id " + child.attrib["name"])
+                continue            
         if child.tag == "string":
             do_string(child, dc)
         if child.tag == "string-array":

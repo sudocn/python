@@ -4,9 +4,9 @@ from lxml import etree
 from common import extract_xml
 import csv
 
-orig_root = r"C:\Documents and Settings\cpeng\Desktop\string-resources"
-out_root =  r"C:\Documents and Settings\cpeng\Desktop\out-resources"
-translated_text=r"D:\translation 20130606-Hindi.txt"
+orig_root = r"C:\Documents and Settings\cpeng\Desktop\r4"
+out_root =  r"C:\Documents and Settings\cpeng\Desktop\out-es"
+translated_text=r"D:\spanish.txt"
 
 def translate_element(e, dc):
     def translate_text(e, name, dc):
@@ -134,7 +134,7 @@ def main():
         vocabulary = {}
         for row in reader:
             #print(row[0])
-            id, content = row
+            id, en, zh, content, *remain = row
             if state < 2:
                 if state == 0: cur_dir = row[0]
                 if state == 1: cur_file = row[0]
@@ -144,8 +144,8 @@ def main():
             if len(id) == 0: # end of a translation section 
                 #print(os.path.join(cur_dir, cur_file))
                 inpath = os.path.join(orig_root,cur_dir, "values", cur_file)
-                refpath = os.path.join(orig_root,cur_dir, "values-hi", cur_file)
-                outpath = os.path.join(out_root,cur_dir, "values-hi", cur_file)
+                refpath = os.path.join(orig_root,cur_dir, "values-es", cur_file)
+                outpath = os.path.join(out_root,cur_dir, "values-es", cur_file)
                 print(inpath)
                 print(outpath)
                 if os.path.exists(refpath):

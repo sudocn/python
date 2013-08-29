@@ -3,9 +3,12 @@ import os, os.path
 from common import extract_xml
 import csv
 
-res_root = r"C:\Documents and Settings\cpeng\Desktop\string-resources"
-languages = ["values", "values-zh-rCN", "values-hi"]
-fp = open("d:\\ttt.csv", mode="w", newline="", encoding="utf-8")
+res_root = r"C:\Documents and Settings\cpeng\Desktop\r4"
+languages = ["values", "values-zh-rCN", "values-es", "values-pt", "values-ru"]
+#res_root = r"C:\Documents and Settings\cpeng\Desktop\r2_my_sw_vi_fr"
+#languages = ["values", "values-zh-rCN", "values-my", "values-sw", "values-vi", "values-fr"]
+
+fp = open("d:\\t4.txt", mode="w", newline="", encoding="utf-8")
 csv_writer = csv.writer(fp, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
 def find_dirs(res_root):
@@ -65,7 +68,12 @@ def process_app(base, res):
             it = dict_all[k]
             #print('%s, "%s", "%s", "%s"'%(k,it[0],it[1],it[2]), file=fp)
             #print(k,it, file=fp)
-            csv_writer.writerow([k] + list(it))
+            
+            # if English string is empty, or all languages are translated
+            # no bother to output it
+            lens = list(map(len, it))
+            if lens[0] and (0 in lens[1:]):    
+                csv_writer.writerow([k] + list(it))
         print(len(dict_all))
             
 def main():
