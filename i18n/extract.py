@@ -3,12 +3,12 @@ import os, os.path
 from common import extract_xml
 import csv
 
-res_root = r"C:\Documents and Settings\cpeng\Desktop\r4"
-languages = ["values", "values-zh-rCN", "values-es", "values-pt", "values-ru"]
+res_root = r"C:\Documents and Settings\cpeng\Desktop\string"
+languages = ["values", "values-ar", "values-es-rUS", "values-fa", "values-fr", "values-in", "values-ms", "values-pt", "values-ru", "values-th", "values-tr","values-uk","values-vi"]
 #res_root = r"C:\Documents and Settings\cpeng\Desktop\r2_my_sw_vi_fr"
 #languages = ["values", "values-zh-rCN", "values-my", "values-sw", "values-vi", "values-fr"]
 
-fp = open("d:\\t4.txt", mode="w", newline="", encoding="utf-8")
+fp = open("d:\\string.txt", mode="w", newline="", encoding="utf-8")
 csv_writer = csv.writer(fp, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
 
 def find_dirs(res_root):
@@ -72,12 +72,14 @@ def process_app(base, res):
             # if English string is empty, or all languages are translated
             # no bother to output it
             lens = list(map(len, it))
-            if lens[0] and (0 in lens[1:]):    
-                csv_writer.writerow([k] + list(it))
+            #if lens[0] and (0 in lens[1:]):    
+            #    csv_writer.writerow([k] + list(it))
+            csv_writer.writerow([k] + list(it))
         print(len(dict_all))
             
 def main():
     #find_files()
+    csv_writer.writerow(["id"] + languages)
     apps = find_dirs(res_root)
     for d in apps:
         print(d)
