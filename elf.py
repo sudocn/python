@@ -467,7 +467,8 @@ class ELF32Dynamic:
 
 class ELFImage:
 	def __init__(self, f):
-		self.fp = f
+		#self.fp = f
+		self._opener(f)
 		self.segments = self.sections = []
 		self._parse_eheader()
 		self._parse_pheader()
@@ -480,7 +481,7 @@ class ELFImage:
 
 		print len(self.sections), self.dynamic
 		if not self.sections and self.dynamic:
-			print "Warning: not section found, faking it"
+			print "Warning: no section found, faking it"
 			self._fake_sections()
 
 		'''
@@ -495,6 +496,9 @@ class ELFImage:
 			#self.add_dynamic_compile()
 			#self.dump(4)
 			pass
+
+	def _opener(self, f):
+		self.fp = open(f, "r")
 
 	def _parse_eheader(self):
 		# elf header
@@ -796,6 +800,9 @@ def load_file(f, neflags, format):
 	return elf
 
 class ELFWriter(ELFImage):
+	def _opener(self, f):
+		self.fp = open(f, "r+")
+
 	def _write_eheader(self, ehdr):
 		# elf header
 		self.fp.seek(16, 0)
@@ -803,8 +810,8 @@ class ELFWriter(ELFImage):
 		 ehdr.e_phoff,  ehdr.e_shoff,   ehdr.e_flags,    ehdr.e_ehsize, \
 		 ehdr.e_phentsize, ehdr.e_phnum,  ehdr.e_shentsize, \
 		 ehdr.e_shnum,  ehdr.e_shstridx)
-		print "header len:", len(output)
-		print "write ELF header..."
+		#print "header len:", len(output)
+		print "write ELF header ..."
 		self.fp.write(output)
 
 	def _write_pheader(self):
@@ -814,14 +821,14 @@ class ELFWriter(ELFImage):
 #		self.segments = []
 
 		self.fp.seek(self.ehdr.e_phoff, 0)
-		print "write Program headers..."
-		for phdr in self.segments:
+		for i,phdr in enumerate(self.segments):
+			print "write Program headers %d ..." % i
 			output = struct.pack('<IIIIIIII', phdr.p_type, phdr.p_offset, phdr.p_vaddr, phdr.p_vaddr, \
 				phdr.p_filesz, phdr.p_memsz, phdr.p_flags, phdr.p_align)
 			self.fp.write(output)
 
 
-class ELFModifier(ELFWriter):
+class MMFixer(ELFWriter):
 	def fix_eheader(self):
 		self.ehdr.e_shoff = 0
 		self.ehdr.e_shentsize = 0
@@ -849,14 +856,14 @@ import sys, os
 def patch_elf(orig):
 	path,ext = os.path.splitext(orig)
 	dest = path+"_r1"+ext
-	print "Path %s to %s" % (orig, dest)
+
+	print "Patch %s to %s" % (orig, dest)
 	os.system("cp " + orig + " " + dest)
-	m = ELFModifier(open(dest, "r+"))
-	
+
+	m = MMFixer(dest)
 	# R1
 	m.fix_eheader()
 	m.fix_pheader()
-
 	# R2
 
 if __name__ == "__main__":
@@ -873,16 +880,13 @@ if __name__ == "__main__":
 
 	# if modification flag exist
 	if 'f' in options:
-		print "Patch ELF file ..."
 		options.remove('f')
-		#print os.path.dirname(targets[0])
-		#print os.path.basename(targets[0])
 		patch_elf(targets[0])
 		sys.exit(0)	
 
 	for t in targets:
 		if len(targets) > 1: print "File:", t
-		e = ELFImage(open(t, "r"))
+		e = ELFImage(t)
 		for opt in options:
 			e.dump(opt)
 		#print e, e.loads
