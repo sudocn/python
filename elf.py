@@ -24,6 +24,7 @@ import struct
 import sys
 import os
 import io
+import traceback
 
 ELF_MAGIC = '\x7f\x45\x4c\x46'
 
@@ -49,6 +50,8 @@ SHT_NOBITS = 8
 SHT_REL    = 9
 SHT_SHLIB  = 10
 SHT_DYNSYM = 11
+SHT_INIT_ARRAY = 14
+SHT_FINI_ARRAY = 15
 
 # DT types parsed in android linker
 DT_HASH   = 4		# symbol hash talbe
@@ -75,6 +78,7 @@ DT_SYMBOLIC = 16
 DT_NEEDED = 1
 # DT_FLAGS  =
 DT_STRSZ  = 10
+DT_SYMENT = 11
 
 try:
 	from awesome_print import ap as pp
@@ -260,8 +264,10 @@ class ELF32Shdr:
 		self.sh_info = sh_info
 		self.sh_addralign = sh_addralign
 		self.sh_entsize = sh_entsize
-	#def __init__(self, sh_name, sh_type, sh_offset, sh_size):
-	#	self.__init__(sh_name, sh_type, 0, 0, sh_offset, sh_size, 0, 0, 1, 0)
+		# for fake section headers
+		if isinstance(sh_name, str):
+			self.name = sh_name
+
 	def type2str(self, type):
 		return dict_search_safe(self.dict_sh_type, type)
 	def __str__(self):
@@ -325,7 +331,7 @@ class ELF32SymTab:
 	'''
 	def get_id(self, id):
 		(st_name, st_value, st_size, st_info, st_other, st_shndx) = self.symbols[id]
-		return (self.strtab.get_str(st_name), self.st_value)
+		return (self.strtab.get_str(st_name), st_value)
 
 	def __str__(self):
 		output = ""
@@ -361,13 +367,15 @@ class ELF32Rel:
 		20 : "R_ARM_COPY"
 	}
 
-	def __init__(self, content):
+	def __init__(self, content, dynsym):
 		self.rels = []
+		self.dynsym = dynsym
 		for idx in range(0, len(content), 8):
 			self.rels.append(struct.unpack('<II', content[idx:idx+8]))
 
 	def type2str(self, type):
 		return dict_search_safe(self.dict_rel_type, type)
+
 	def __str__(self):
 		output = ""
 		for it in self.rels:
@@ -375,9 +383,10 @@ class ELF32Rel:
 			r_type = r_info & 0xff 
 			r_sym = r_info >> 8
 			if r_sym:
-				output += "%8x %8x %12s %s\n" % (r_offset, r_info, self.type2str(r_type), str(r_sym))
+				sym_name, sym_value = self.dynsym.get_id(r_sym)
+				output += "%8x %6x,%02x %-20s %-8d %s\n" % (r_offset, r_sym, r_type, self.type2str(r_type), sym_value, sym_name)
 			else:
-				output += "%8x %8x %12s\n" % (r_offset, r_info, self.type2str(r_type))
+				output += "%8x %6x,%02x %-20s\n" % (r_offset, r_sym, r_type, self.type2str(r_type))
 		return output
 
 '''
@@ -451,12 +460,13 @@ class ELF32Dynamic:
 		for idx in range(0, len(content), 8):
 			self.dyns.append(struct.unpack('<II', content[idx:idx+8]))
 	def get_by_tag(self, tag):
+		#print "searching %s" % tag
 		for it in self.dyns:
 			(t, v) = it
+			#print "  %d %d" % it
 			if t == tag:
 				return v
-			else:
-				return None
+		return None
 	def type2str(self, type):
 		return dict_search_safe(self.dict_dt_type, type)
 	def __str__(self):
@@ -477,9 +487,11 @@ class ELFImage:
 		except Exception as e:
 			self.sections = []
 			print "section header parse error"
-			print e
+			#print e
+			traceback.print_exc()
+			print "-" * 8
 
-		print len(self.sections), self.dynamic
+		#print len(self.sections), self.dynamic
 		if not self.sections and self.dynamic:
 			print "Warning: no section found, faking it"
 			self._fake_sections()
@@ -537,6 +549,10 @@ class ELFImage:
 		# Section header
 		self.sections = []
 		self.fp.seek(self.ehdr.e_shoff, 0)
+		
+		if self.ehdr.e_shnum == 0:
+			return
+
 		for i in range(self.ehdr.e_shnum):
 			(sh_name, sh_type, sh_flags, sh_addr, sh_offset, 
 			sh_size, sh_link, sh_info, sh_addralign, sh_entsize) = struct.unpack('<IIIIIIIIII', self.fp.read(40))
@@ -552,6 +568,37 @@ class ELFImage:
 	def _fake_sections(self):
 		if self.sections:
 			raise Exception("sections not null, stop faking sections")
+		
+		# fake .dynamic section
+		fake_dyn = ELF32Shdr(".dynamic", SHT_DYNAMIC, self.dynamic.p_offset, self.dynamic.p_filesz)
+		#fake_dyn.name = ".dynamic"
+		self.sections.append(fake_dyn)
+		dyn = self.load_section(fake_dyn)
+
+#		try:
+		# fake .dynstr, .dynsym
+		addr = dyn.get_by_tag(DT_STRTAB)
+		size = dyn.get_by_tag(DT_STRSZ)
+		print "%x %x"% (addr, size)
+		self.sections.append(ELF32Shdr(".dynstr", SHT_STRTAB, addr, size))
+		addr = dyn.get_by_tag(DT_SYMTAB)
+		entsz = dyn.get_by_tag(DT_SYMENT)
+		hash_addr = dyn.get_by_tag(DT_HASH)
+		(nbucket, nchain) = struct.unpack('<II', self._read_bytes(hash_addr, 8))
+		print addr, entsz, nbucket, nchain
+		self.sections.append(ELF32Shdr(".dynsym", SHT_DYNSYM, addr, entsz*nchain))
+		# TODO: fake .hash
+
+		# fake .rel.dyn, .rel.plt
+		self.sections.append(ELF32Shdr(".rel.dyn", SHT_REL, dyn.get_by_tag(DT_REL), dyn.get_by_tag(DT_RELSZ)))
+		self.sections.append(ELF32Shdr(".rel.plt", SHT_REL, dyn.get_by_tag(DT_JMPREL), dyn.get_by_tag(DT_PLTRELSZ)))
+
+		# fake .init.array, .fini.array
+		self.sections.append(ELF32Shdr(".init.array", SHT_INIT_ARRAY, dyn.get_by_tag(DT_INIT_ARRAY), dyn.get_by_tag(DT_INIT_ARRAYSZ)))
+		self.sections.append(ELF32Shdr(".fini.array", SHT_FINI_ARRAY, dyn.get_by_tag(DT_FINI_ARRAY), dyn.get_by_tag(DT_FINI_ARRAYSZ)))
+
+		# TODO: fake .got
+		# TODO: fake .plt
 
 	def _read_bytes(self, off, size):
 		self.fp.seek(off, 0)
@@ -559,13 +606,6 @@ class ELFImage:
 
 	def get_section_hdr_by_type(self, type):
 		return [x for x in self.sections if x.sh_type == type]
-
-	def load_dynamic(self):
-			if self.sections:
-				return self.load_section(".dynamic")
-			else:
-				fake_dyn = ELF32Shdr(".fake.dynsym", SHT_DYNAMIC, self.dynamic.p_offset, self.dynamic.p_filesz)
-				return self.load_section(fake_dyn)
 
 	def load_section(self, target):
 		# return class ELF32Shdr by name
@@ -593,9 +633,12 @@ class ELFImage:
 		elif t == SHT_DYNAMIC:
 			return ELF32Dynamic(content)
 		elif t == SHT_REL:
-			return ELF32Rel(content) 
-		elif t == SHT_DYNSYM or t == SHT_SYMTAB:
+			return ELF32Rel(content, self.load_section(".dynsym")) 
+		elif t == SHT_DYNSYM:
 			return ELF32SymTab(content, self.load_section(".dynstr"))
+		elif t == SHT_SYMTAB:
+			# TODO: strtab & symtab
+			pass
 		else:
 			raise Exception("Section parser Not implemented")
 		#sec_hdr = get_section_hdr(name)
@@ -617,7 +660,7 @@ class ELFImage:
 
 		elif type == "d": # Dynamic
 			print "Dynamic section:"
-			print self.load_dynamic()
+			print self.load_section(".dynamic")
 		elif type == "s": # Dynsym
 			print "Dynamic Symbol:"
 			print " Num:    Value     Size Type       Bind    Vis    Ndx Name"
@@ -823,6 +866,7 @@ class ELFWriter(ELFImage):
 		self.fp.seek(self.ehdr.e_phoff, 0)
 		for i,phdr in enumerate(self.segments):
 			print "write Program headers %d ..." % i
+			# use p_vaddr as p_paddr, they are always same
 			output = struct.pack('<IIIIIIII', phdr.p_type, phdr.p_offset, phdr.p_vaddr, phdr.p_vaddr, \
 				phdr.p_filesz, phdr.p_memsz, phdr.p_flags, phdr.p_align)
 			self.fp.write(output)
