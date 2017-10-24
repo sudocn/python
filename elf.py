@@ -27,16 +27,39 @@ import io
 
 ELF_MAGIC = '\x7f\x45\x4c\x46'
 
+# Segment Types (Program header types)
+PT_NULL = 0
+PT_LOAD = 1
+PT_DYNAMIC = 2
+PT_INTERP  = 3
+PT_NOTE    = 4
+PT_SHLIB   = 5
+PT_PHDR    = 6
+
+# Section Types
+SHT_NULL = 0
+SHT_PROGBITS = 1
+SHT_SYMTAB = 2
+SHT_STRTAB = 3
+SHT_RELA   = 4
+SHT_HASH   = 5
+SHT_DYNAMIC= 6
+SHT_NOTE   = 7
+SHT_NOBITS = 8
+SHT_REL    = 9
+SHT_SHLIB  = 10
+SHT_DYNSYM = 11
+
 # DT types parsed in android linker
-DT_HASH   = 4
-DT_STRTAB = 5
-DT_SYMTAB = 6
-DT_PLTREL = 20
-DT_JMPREL	= 23
-DT_PLTRELSZ	= 2
-DT_REL 	  = 17
-DT_RELSZ  = 18
-DT_PLTGOT = 3
+DT_HASH   = 4		# symbol hash talbe
+DT_STRTAB = 5		# string table
+DT_SYMTAB = 6		# symbol table
+DT_PLTREL = 20		# type of relocation entry to which the procedure linkage table refers, DT_REL or DT_RELA
+DT_JMPREL	= 23	# PLT relocations only (dynamic linker can ignore if lazy binding), must /w DT_PLTRELSZ, DT_PLTREL
+DT_PLTRELSZ	= 2		# size of the PLT relocations, in bytes. must /w DT_JMPREL
+DT_REL 	  = 17		# relocation table, must /w DT_RELSZ, DT_RELENT
+DT_RELSZ  = 18		# size of the DT_REL, in bytes
+DT_PLTGOT = 3		# address of _GLOBAL_OFFSET_TABLE_
 DT_DEBUG  = 21
 DT_RELA   = 7
 DT_INIT   = 12
@@ -96,6 +119,12 @@ def SearchRODATA(data, start, end):
 		current = current + 1
 	'''
 	return [ret_start & ~0x3, (ret_len + 0x3) & ~0x3]
+
+def dict_search_safe(dictionary, key):
+		try:
+			return dictionary[key]
+		except KeyError as e:
+			return "(%s)" % hex(key)
 
 class RelInfo:
 	def __init__(self, name, r_offset, is_fun):
@@ -189,18 +218,16 @@ class ELF32Phdr:
 	0x70000000: "LOPROC", 0x70000001: "EXIDX", 0x7fffffff: "HIPROC"
 	}
 
-	def __init__(self, p_type, p_offset, p_vaddr, p_filesz, p_memsz, p_flags):
+	def __init__(self, p_type, p_offset, p_vaddr, p_filesz, p_memsz, p_flags, p_align):
 		self.p_type   = p_type
 		self.p_offset = p_offset
 		self.p_vaddr  = p_vaddr
 		self.p_filesz = p_filesz
 		self.p_memsz  = p_memsz
 		self.p_flags  = p_flags
+		self.p_align  = p_align
 	def type2str(self, type):
-		try:
-			return self.dict_p_type[type]
-		except KeyError as e:
-			return "(%s)" % hex(type)
+		return dict_search_safe(self.dict_p_type, type)
 	def __str__(self):
 		return "  %-16s %8x %8x %8x %8x %8x" % (self.type2str(self.p_type), self.p_offset, self.p_vaddr, self.p_filesz, self.p_memsz, self.p_flags)
 
@@ -221,7 +248,8 @@ class ELF32Shdr:
 	0x70000000: "LOPROC",  0x70000001: "ARM_EXIDX", 0x70000003: "ARM_ATTRIBUTES",0x7fffffff: "HIPROC", 
 	0x80000000: "LOUSER", 0xffffffff: "HIUSER"
 	}
-	def __init__(self, sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize):
+#	def __init__(self, sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize):
+	def __init__(self, sh_name, sh_type, sh_offset, sh_size, sh_flags=0, sh_addr=0, sh_link=0, sh_info=0, sh_addralign=1, sh_entsize=0):
 		self.sh_name = sh_name
 		self.sh_type = sh_type
 		self.sh_flags = sh_flags
@@ -232,11 +260,10 @@ class ELF32Shdr:
 		self.sh_info = sh_info
 		self.sh_addralign = sh_addralign
 		self.sh_entsize = sh_entsize
+	#def __init__(self, sh_name, sh_type, sh_offset, sh_size):
+	#	self.__init__(sh_name, sh_type, 0, 0, sh_offset, sh_size, 0, 0, 1, 0)
 	def type2str(self, type):
-		try:
-			return self.dict_sh_type[type]
-		except KeyError as e:
-			return "(%s)" % hex(type)
+		return dict_search_safe(self.dict_sh_type, type)
 	def __str__(self):
 		return "  %-24s %-16s %8x %8x %8x %8x" % (self.name, self.type2str(self.sh_type), self.sh_addr, self.sh_offset, self.sh_size, self.sh_entsize)
 
@@ -292,13 +319,10 @@ class ELF32SymTab:
 		self.symbols = []
 		for idx in range(0, len(content), 16):
 			self.symbols.append(struct.unpack('<IIIbbH', content[idx:idx+16]))
-
+	'''
 	def type2str(self, type):
-		try:
-			return self.dict_dt_type[type]
-		except KeyError as e:
-			return "(%s)" % hex(type)
-
+		return dict_search_safe(self.dict_dt_type, type)
+	'''
 	def get_id(self, id):
 		(st_name, st_value, st_size, st_info, st_other, st_shndx) = self.symbols[id]
 		return (self.strtab.get_str(st_name), self.st_value)
@@ -328,16 +352,32 @@ class ELF32SymTab:
 '''
 
 class ELF32Rel:
+	dict_rel_type = {
+		22 : "R_ARM_JUMP_SLOT",
+		21 : "R_ARM_GLOB_DAT",
+		2 : "R_ARM_ABS32",
+		3 : "R_ARM_REL32",
+		23 : "R_ARM_RELATIE",
+		20 : "R_ARM_COPY"
+	}
+
 	def __init__(self, content):
 		self.rels = []
 		for idx in range(0, len(content), 8):
 			self.rels.append(struct.unpack('<II', content[idx:idx+8]))
 
+	def type2str(self, type):
+		return dict_search_safe(self.dict_rel_type, type)
 	def __str__(self):
 		output = ""
 		for it in self.rels:
 			(r_offset, r_info) = it
-			output += "%8x %8x\n" % (r_offset, r_info)
+			r_type = r_info & 0xff 
+			r_sym = r_info >> 8
+			if r_sym:
+				output += "%8x %8x %12s %s\n" % (r_offset, r_info, self.type2str(r_type), str(r_sym))
+			else:
+				output += "%8x %8x %12s\n" % (r_offset, r_info, self.type2str(r_type))
 		return output
 
 '''
@@ -407,21 +447,55 @@ class ELF32Dynamic:
 	}
 
 	def __init__(self, content):
-		self.dynamics = []
+		self.dyns = []
 		for idx in range(0, len(content), 8):
-			self.dynamics.append(struct.unpack('<II', content[idx:idx+8]))
+			self.dyns.append(struct.unpack('<II', content[idx:idx+8]))
+	def get_by_tag(self, tag):
+		for it in self.dyns:
+			(t, v) = it
+			if t == tag:
+				return v
+			else:
+				return None
 	def type2str(self, type):
-		try:
-			return self.dict_dt_type[type]
-		except KeyError as e:
-			return "(%s)" % hex(type)
+		return dict_search_safe(self.dict_dt_type, type)
 	def __str__(self):
 		output = ""
-		for it in self.dynamics:
+		for it in self.dyns:
 			output += "  %8x %-24s %x\n" % (it[0], '('+self.type2str(it[0])+')', it[1])
 		return output
 
 class ELFImage:
+	def __init__(self, f):
+		self.fp = f
+		self.segments = self.sections = []
+		self._parse_eheader()
+		self._parse_pheader()
+		try: 
+			self._parse_sheader()
+		except Exception as e:
+			self.sections = []
+			print "section header parse error"
+			print e
+
+		print len(self.sections), self.dynamic
+		if not self.sections and self.dynamic:
+			print "Warning: not section found, faking it"
+			self._fake_sections()
+
+		'''
+		self.sections = []
+		f.seek(self.loads[0].p_offset, 0)
+		load0_data = f.read(self.loads[0].p_filesz)
+		'''
+		if self.static_compile:
+			#self.add_static_compile()
+			pass
+		else:
+			#self.add_dynamic_compile()
+			#self.dump(4)
+			pass
+
 	def _parse_eheader(self):
 		# elf header
 		self.fp.seek(16, 0)
@@ -430,7 +504,7 @@ class ELFImage:
 		 e_phentsize, e_phnum,  e_shentsize, 
 		 e_shnum,  e_shstridx) = struct.unpack('<HHIIIIIHHHHHH', self.fp.read(36))
 		self.ehdr = ELF32Ehdr(e_entry, e_phoff, e_shoff, e_flags, e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstridx)
-
+	
 	def _parse_pheader(self):
 		# program header (segments)
 		self.static_compile = True
@@ -440,12 +514,12 @@ class ELFImage:
 		for i in range(self.ehdr.e_phnum):
 			(p_type, p_offset, p_vaddr, p_paddr, 
 			p_filesz, p_memsz, p_flags, p_align) = struct.unpack('<IIIIIIII', self.fp.read(32))
-			phdr = ELF32Phdr(p_type, p_offset, p_vaddr, p_filesz, p_memsz, p_flags)
+			phdr = ELF32Phdr(p_type, p_offset, p_vaddr, p_filesz, p_memsz, p_flags, p_align)
 			self.segments.append(phdr)
 
-			if p_type == 1:
+			if p_type == PT_LOAD:
 				self.loads.append(phdr)
-			if p_type == 2:
+			if p_type == PT_DYNAMIC:
 				self.dynamic = phdr
 				self.static_compile = False
 			if p_type == 0x70000001:
@@ -462,7 +536,8 @@ class ELFImage:
 		for i in range(self.ehdr.e_shnum):
 			(sh_name, sh_type, sh_flags, sh_addr, sh_offset, 
 			sh_size, sh_link, sh_info, sh_addralign, sh_entsize) = struct.unpack('<IIIIIIIIII', self.fp.read(40))
-			shdr = ELF32Shdr(sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize)
+			# NOTE: ELF32Shdr paramter order changed, for convient of create new class
+			shdr = ELF32Shdr(sh_name, sh_type, sh_offset, sh_size, sh_flags, sh_addr, sh_link, sh_info, sh_addralign, sh_entsize)
 			self.sections.append(shdr)
 
 		# get section names from shstrtab
@@ -470,12 +545,23 @@ class ELFImage:
 		for i in self.sections:
 			i.name = strtab.get_str(i.sh_name)
 
+	def _fake_sections(self):
+		if self.sections:
+			raise Exception("sections not null, stop faking sections")
+
 	def _read_bytes(self, off, size):
 		self.fp.seek(off, 0)
 		return self.fp.read(size)
 
 	def get_section_hdr_by_type(self, type):
 		return [x for x in self.sections if x.sh_type == type]
+
+	def load_dynamic(self):
+			if self.sections:
+				return self.load_section(".dynamic")
+			else:
+				fake_dyn = ELF32Shdr(".fake.dynsym", SHT_DYNAMIC, self.dynamic.p_offset, self.dynamic.p_filesz)
+				return self.load_section(fake_dyn)
 
 	def load_section(self, target):
 		# return class ELF32Shdr by name
@@ -498,44 +584,44 @@ class ELFImage:
 		#stream = io.BytesIO(content)
 
 		t = sec_hdr.sh_type
-		if t == 3: # STRTAB
+		if t == SHT_STRTAB:
 			return ELFStrTab(content)
-		elif t == 6: # DYNAMIC
+		elif t == SHT_DYNAMIC:
 			return ELF32Dynamic(content)
-		elif t == 9: #REL
+		elif t == SHT_REL:
 			return ELF32Rel(content) 
-		elif t == 11: # DYNSYM
+		elif t == SHT_DYNSYM or t == SHT_SYMTAB:
 			return ELF32SymTab(content, self.load_section(".dynstr"))
 		else:
-			raise Excetion("Section parser Not implemented")
+			raise Exception("Section parser Not implemented")
 		#sec_hdr = get_section_hdr(name)
 
 	def dump(self, type):
-		if type == "-h":	# ELF header
+		if type == "h":	# ELF header
 			print "ELF Header:"
 			print self.ehdr
-		elif type == "-l":	# Program header
+		elif type == "l":	# Program header
 			print "Program Headers:"
 			print "  Type               Offset  VirtAddr FileSiz   MemSiz      Flg"
 			for phdr in self.segments:
 				print phdr
-		elif type == "-S":	# Section header
+		elif type == "S":	# Section header
 			print "Section Headers:"
 			print "  Name                     Type                 Addr      Off     Size  Entsize"
 			for shdr in self.sections:
 				print shdr
-		elif type == "-d": # Dynamic
+
+		elif type == "d": # Dynamic
 			print "Dynamic section:"
-			#print self._parse_section_DYNAMIC()
-			print self.load_section(".dynamic")
-		elif type == "-s": # Dynsym
+			print self.load_dynamic()
+		elif type == "s": # Dynsym
 			print "Dynamic Symbol:"
 			print " Num:    Value     Size Type       Bind    Vis    Ndx Name"
-			#print self._parse_section_DYNSYM()
 			print self.load_section(".dynsym")
-		elif type == "-r": # relocation
+		elif type == "r": # relocation
 			for rel in self.get_section_hdr_by_type(9):
 				print "Relocation section '%s' at offset %x:" % (rel.name, rel.sh_offset)
+				print "  Offset     Info    Type          Sym.Value   Sym.Name"
 				print self.load_section(rel)	
 
 	def add_static_compile(self):
@@ -660,34 +746,6 @@ class ELFImage:
 			self.sections.append(Section('.data', preinitArray_vaddr + preinitArraySize, self.loads[1].p_vaddr + got_end_offset, 'DATA'))
 		self.sections.append(Section('.bss', self.loads[1].p_vaddr + self.loads[1].p_filesz, self.loads[1].p_vaddr + self.loads[1].p_memsz, 'DATA'))
 
-
-	def __init__(self, f):
-		self.fp = f
-		self._parse_eheader()
-		#self.dump(1)
-
-		self._parse_pheader()
-		#self.dump(2)
-
-		try: 
-			self._parse_sheader()
-		except:
-			print "section header parse error"
-		#self.dump(3)
-
-		'''
-		self.sections = []
-		f.seek(self.loads[0].p_offset, 0)
-		load0_data = f.read(self.loads[0].p_filesz)
-		'''
-		if self.static_compile:
-			#self.add_static_compile()
-			pass
-		else:
-			#self.add_dynamic_compile()
-			#self.dump(4)
-			pass
-
 def findCstringTail(str):
 	retval = -1
 
@@ -737,10 +795,95 @@ def load_file(f, neflags, format):
 	'''
 	return elf
 
+class ELFWriter(ELFImage):
+	def _write_eheader(self, ehdr):
+		# elf header
+		self.fp.seek(16, 0)
+		output = struct.pack('<HHIIIIIHHHHHH', 3,  40, 1, ehdr.e_entry,  \
+		 ehdr.e_phoff,  ehdr.e_shoff,   ehdr.e_flags,    ehdr.e_ehsize, \
+		 ehdr.e_phentsize, ehdr.e_phnum,  ehdr.e_shentsize, \
+		 ehdr.e_shnum,  ehdr.e_shstridx)
+		print "header len:", len(output)
+		print "write ELF header..."
+		self.fp.write(output)
+
+	def _write_pheader(self):
+		# program header (segments)
+#		self.static_compile = True
+#		self.loads = []
+#		self.segments = []
+
+		self.fp.seek(self.ehdr.e_phoff, 0)
+		print "write Program headers..."
+		for phdr in self.segments:
+			output = struct.pack('<IIIIIIII', phdr.p_type, phdr.p_offset, phdr.p_vaddr, phdr.p_vaddr, \
+				phdr.p_filesz, phdr.p_memsz, phdr.p_flags, phdr.p_align)
+			self.fp.write(output)
+
+
+class ELFModifier(ELFWriter):
+	def fix_eheader(self):
+		self.ehdr.e_shoff = 0
+		self.ehdr.e_shentsize = 0
+		self.ehdr.e_shnum = 0
+		self.ehdr.e_shstridx = 0
+		self._write_eheader(self.ehdr)
+
+	def fix_pheader(self):
+		# 0 LOAD .TEXT
+		p = self.segments[0]
+		p.p_filesz = p.p_memsz
+
+		# 1 LOAD .DATA
+		p = self.segments[1]
+		p.p_offset = p.p_vaddr
+
+		# 2 DYNAMIC .DYNAMIC
+		p = self.segments[2]
+		p.p_offset = p.p_vaddr
+
+		self._write_pheader()
+
+
+import sys, os
+def patch_elf(orig):
+	path,ext = os.path.splitext(orig)
+	dest = path+"_r1"+ext
+	print "Path %s to %s" % (orig, dest)
+	os.system("cp " + orig + " " + dest)
+	m = ELFModifier(open(dest, "r+"))
+	
+	# R1
+	m.fix_eheader()
+	m.fix_pheader()
+
+	# R2
+
 if __name__ == "__main__":
-	target = "/Users/cpeng/Downloads/mm352/dump/libaspirecommon.so"
-	if len(sys.argv) > 1:
-		target = sys.argv[2]
-	e = ELFImage(open(target, "r"))
-	e.dump(sys.argv[1])
-	#print e, e.loads
+	default_target = "/Users/cpeng/Downloads/mm352/dump/libaspirecommon.so"
+	targets, options = [],[]
+	for t in sys.argv[1:]:
+		if t[0] == '-':
+			options.append(t[1:])
+		else:
+			targets.append(t)
+
+	if not targets:	targets= [default_target]
+	if not options: options = ['h', 'l', 'S']
+
+	# if modification flag exist
+	if 'f' in options:
+		print "Patch ELF file ..."
+		options.remove('f')
+		#print os.path.dirname(targets[0])
+		#print os.path.basename(targets[0])
+		patch_elf(targets[0])
+		sys.exit(0)	
+
+	for t in targets:
+		if len(targets) > 1: print "File:", t
+		e = ELFImage(open(t, "r"))
+		for opt in options:
+			e.dump(opt)
+		#print e, e.loads
+
