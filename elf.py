@@ -276,9 +276,17 @@ class ELF32Shdr:
 class ELFStrTab:
 	def __init__(self, content):
 		self.content = content
+		self.str_array = content.split(chr(0))
 	def get_str(self, idx):
 		end = self.content.index(chr(0), idx)
 		return self.content[idx:end]#self.content.index(idx, chr(0))]
+	def get_id(self, sym):
+		idx = self.str_array.index(sym)
+		if self.get_str(idx) != sym:
+			print self.str_array
+			raise Exception("ELFStrTab: get_id mismatch!!! %d %s:%s" % (idx, self.get_str(idx), sym))
+		else:
+			return idx
 
 '''
 ######################################################################################
@@ -325,13 +333,22 @@ class ELF32SymTab:
 		self.symbols = []
 		for idx in range(0, len(content), 16):
 			self.symbols.append(struct.unpack('<IIIbbH', content[idx:idx+16]))
+		self.sym_name_array = [ self.strtab.get_str(x[0]) for x in self.symbols]
 	'''
 	def type2str(self, type):
 		return dict_search_safe(self.dict_dt_type, type)
 	'''
-	def get_id(self, id):
+	def get_sym(self, id):
 		(st_name, st_value, st_size, st_info, st_other, st_shndx) = self.symbols[id]
 		return (self.strtab.get_str(st_name), st_value)
+
+	def get_id(self, sym_name):
+		idx = self.sym_name_array.index(sym_name)
+		if self.get_sym(idx)[0] != sym_name:
+			print self.str_array
+			raise Exception("ELFStrTab: get_id mismatch!!! %d %s:%s" % (idx, self.get_sym(idx)[0], sym_name))
+		else:
+			return idx
 
 	def __str__(self):
 		output = ""
@@ -383,7 +400,7 @@ class ELF32Rel:
 			r_type = r_info & 0xff 
 			r_sym = r_info >> 8
 			if r_sym:
-				sym_name, sym_value = self.dynsym.get_id(r_sym)
+				sym_name, sym_value = self.dynsym.get_sym(r_sym)
 				output += "%8x %6x,%02x %-20s %-8d %s\n" % (r_offset, r_sym, r_type, self.type2str(r_type), sym_value, sym_name)
 			else:
 				output += "%8x %6x,%02x %-20s\n" % (r_offset, r_sym, r_type, self.type2str(r_type))
@@ -488,13 +505,14 @@ class ELFImage:
 			self.sections = []
 			print "section header parse error"
 			#print e
+			print "-" * 8
 			traceback.print_exc()
 			print "-" * 8
 
 		#print len(self.sections), self.dynamic
 		if not self.sections and self.dynamic:
 			print "Warning: no section found, faking it"
-			self._fake_sections()
+			self.fake_sections()
 
 		'''
 		self.sections = []
@@ -565,10 +583,20 @@ class ELFImage:
 		for i in self.sections:
 			i.name = strtab.get_str(i.sh_name)
 
-	def _fake_sections(self):
+	def fake_sections(self):
 		if self.sections:
 			raise Exception("sections not null, stop faking sections")
-		
+		try:
+		 	self._fake_sections()
+		except Exception as e:
+			self.sections = []
+			print "Error when faking section"
+			print "-"*8
+			traceback.print_exc()
+			print "-"*8
+
+
+	def _fake_sections(self):
 		# fake .dynamic section
 		fake_dyn = ELF32Shdr(".dynamic", SHT_DYNAMIC, self.dynamic.p_offset, self.dynamic.p_filesz)
 		#fake_dyn.name = ".dynamic"
@@ -579,13 +607,13 @@ class ELFImage:
 		# fake .dynstr, .dynsym
 		addr = dyn.get_by_tag(DT_STRTAB)
 		size = dyn.get_by_tag(DT_STRSZ)
-		print "%x %x"% (addr, size)
+		#print "%x %x"% (addr, size)
 		self.sections.append(ELF32Shdr(".dynstr", SHT_STRTAB, addr, size))
 		addr = dyn.get_by_tag(DT_SYMTAB)
 		entsz = dyn.get_by_tag(DT_SYMENT)
 		hash_addr = dyn.get_by_tag(DT_HASH)
 		(nbucket, nchain) = struct.unpack('<II', self._read_bytes(hash_addr, 8))
-		print addr, entsz, nbucket, nchain
+		#print addr, entsz, nbucket, nchain
 		self.sections.append(ELF32Shdr(".dynsym", SHT_DYNSYM, addr, entsz*nchain))
 		# TODO: fake .hash
 
@@ -607,13 +635,14 @@ class ELFImage:
 	def get_section_hdr_by_type(self, type):
 		return [x for x in self.sections if x.sh_type == type]
 
+	def get_section_hdr(self, name):
+		for sec in self.sections:
+			if sec.name == name:
+				return sec
+		return None
+
 	def load_section(self, target):
 		# return class ELF32Shdr by name
-		def get_section_hdr(name):
-			for sec in self.sections:
-				if sec.name == name:
-					return sec
-			return None
 
 		if isinstance(target, ELF32Shdr):
 			#print "is section header"
@@ -622,7 +651,7 @@ class ELFImage:
 			sec_hdr = self.sections[target]
 		elif isinstance(target, str):
 			#print "is string"
-			sec_hdr = get_section_hdr(target)
+			sec_hdr = self.get_section_hdr(target)
 
 		content = self._read_bytes(sec_hdr.sh_offset, sec_hdr.sh_size)
 		#stream = io.BytesIO(content)
@@ -802,7 +831,6 @@ def findCstringTail(str):
 			break
 	return retval
 
-
 def load_file(f, neflags, format):
 	#print('------------Log begin ---------------')
 	#f.seek(0)
@@ -858,11 +886,6 @@ class ELFWriter(ELFImage):
 		self.fp.write(output)
 
 	def _write_pheader(self):
-		# program header (segments)
-#		self.static_compile = True
-#		self.loads = []
-#		self.segments = []
-
 		self.fp.seek(self.ehdr.e_phoff, 0)
 		for i,phdr in enumerate(self.segments):
 			print "write Program headers %d ..." % i
@@ -871,6 +894,24 @@ class ELFWriter(ELFImage):
 				phdr.p_filesz, phdr.p_memsz, phdr.p_flags, phdr.p_align)
 			self.fp.write(output)
 
+	def _write_dynamic(self, dyns):
+		print "write dynamic info ..."
+		self.fp.seek(self.dynamic.p_offset, 0)
+		for d in dyns:
+			self.fp.write(struct.pack('<II', *d))
+
+	def _write_list(self, wlist, bs=1):
+		print "write patches from list ..."
+		for i,v in wlist:
+			self.fp.seek(i, 0)
+			if bs == 1:
+				print "  patch %x: %x" % (i,v)
+				self.fp.write(struct.pack('<I', v))
+			elif bs == 2:
+				print "  patch %x: %x %x" % (i, v[0], v[1])
+				self.fp.write(struct.pack('<II', *v))
+			else:
+				raise Exception("_write_list: unsupported write bs number %d" % bs)
 
 class MMFixer(ELFWriter):
 	def fix_eheader(self):
@@ -895,20 +936,152 @@ class MMFixer(ELFWriter):
 
 		self._write_pheader()
 
+	def remove_init_func(self):
+		dyns = self.load_section(".dynamic").dyns
+		dyns = [x for x in dyns if x[0] != DT_INIT]
+		dyns.append((0,0))
+		self._write_dynamic(dyns)
+
+	def fix_relocation(self):
+		def load_rel_section(sec_name):
+			r = []
+			#self.dynsym = dynsym
+			sec_hdr = self.get_section_hdr(sec_name)
+			content = self._read_bytes(sec_hdr.sh_offset, sec_hdr.sh_size)
+			for idx in range(0, len(content), 8):
+				offset, info = struct.unpack('<II', content[idx:idx+8])
+				r.append([idx + sec_hdr.sh_offset, [offset, info]])
+			return r
+
+		def load_rel_type(type_id):
+			rel_dyn = load_rel_section(".rel.dyn")
+			rel_plt = load_rel_section(".rel.plt")
+
+			#print rel_dyn, type_id
+			r1 = [ x for x in rel_dyn if x[1][1] & 0xff == type_id]
+			r2 = [ x for x in rel_plt if x[1][1] & 0xff == type_id]
+			return r1 + r2
+
+		import relocation
+		base = 0x76833000
+		'''
+		0     1        2        3
+		11d88 76833000 RELATIVE 
+		11ec4 76833000 RELATIVE 
+		11ec8 76833000 RELATIVE 
+		12184 40121384 GLOB_DAT __stack_chk_guard
+		12188 76841360 GLOB_DAT __aeabi_unwind_cpp_pr1
+		1218c 76841358 GLOB_DAT __aeabi_unwind_cpp_pr0
+		12190 76841368 GLOB_DAT __aeabi_unwind_cpp_pr2
+		12194 400e20e1 GLOB_DAT __gnu_Unwind_Find_exidx
+		12198 0 GLOB_DAT __cxa_call_unexpected
+		1219c 400fba85 JMP_SLOT __cxa_atexit
+		121a0 400fbb79 JMP_SLOT __cxa_finalize
+
+		'''
+		rel = relocation.relocate("libaspirecommon.relo")
+		start = rel[0][0] - base
+		end   = rel[-1][0] - base
+		print "%x %x" % (start,end) 
+
+		work_area = []
+		idx = 0
+		content = self._read_bytes(start , end - start + 4)
+		# 1. create work area, from the address range of relocation occured
+		for idx in range(0, len(content), 4):
+			work_area.append([start + idx, struct.unpack('<I', content[idx:idx+4])[0]])
+
+		# 2. exclude .dynamic section from work area
+		DYNAMIC = range(self.dynamic.p_offset, self.dynamic.p_filesz + self.dynamic.p_offset, 4)
+		work_area = [x for x in work_area if x[0] not in DYNAMIC]
+
+		# 3. fix RELATIVE relocation
+		RELATIVE = [x[0]-base for x in rel if x[2] == 'RELATIVE']
+		#print RELATIVE
+		relative_fix = [[x[0], x[1] - base] for x in work_area if x[0] in RELATIVE]
+		self._write_list(relative_fix)
+
+		# 4. exclude RELATIVEs from work area 
+		work_area = [x for x in work_area if x[0] not in RELATIVE]
+
+		# 5. fix GLOB_DAT
+		GLOB_DAT = { x[1]: (x[0] - base, x[3])  for x in rel if x[2] == 'GLOB_DAT'}
+		DYNSYM = self.load_section(".dynsym")
+		#print DYNSTR
+		#print GLOB_DAT
+		glob_dat_fix = [ [x[0], x[1], DYNSYM.get_id(GLOB_DAT[x[1]][1]), GLOB_DAT[x[1]][1]]  for x in work_area if x[1] !=0 and x[1] in GLOB_DAT]
+		print glob_dat_fix
+		for i,v,d,n in glob_dat_fix:
+			print "%x: %x %x %s" % (i,v,d,n)
+
+		# 6. fix GLOB_DAT slots in .rel.dyn & .rel.plt
+		rel_glob_dat = load_rel_type(21)
+		for r in rel_glob_dat:
+			i,v = r
+			print "%x: %x %x %x" % (i, v[0], v[1]>>0x8, v[1] & 0xff)
+			for fix in glob_dat_fix:
+				if v[1] >>0x8 == fix[2]:
+					print "  -> %x %s" % (fix[0], fix[3])
+					r[1][0] = fix[0]
+					break
+
+		for i,v in rel_glob_dat:
+			#print i,v
+			print "%x: %x %x" % (i,v[0], v[1])
+
+		self._write_list(rel_glob_dat, 2)
+
+		# 7. exclude GLOB_DATs from work area
+		# work_area = [x for x in work_area if x[0] not in GLOB_DAT]
+
+		# 8. fix JMP_SLOT
+		JMP_SLOT = { x[1]: (x[0] - base, x[3])  for x in rel if x[2] == 'JMP_SLOT'}
+		#print JMP_SLOT
+		jmp_slot_fix = [ [x[0], x[1], DYNSYM.get_id(JMP_SLOT[x[1]][1]), JMP_SLOT[x[1]][1]]  for x in work_area if x[1] !=0 and x[1] in JMP_SLOT]
+		print jmp_slot_fix
+		for i,v,d,n in jmp_slot_fix:
+			print "%x: %x %x %s" % (i,v,d,n)
+
+		# 6. fix JMP_SLOT slots in .rel.dyn & .rel.plt
+		rel_glob_dat = load_rel_type(22)
+		for r in rel_glob_dat:
+			i,v = r
+			print "%x: %x %x %x" % (i, v[0], v[1]>>0x8, v[1] & 0xff)
+			for fix in jmp_slot_fix:
+				if v[1] >>0x8 == fix[2]:
+					print "  -> %x %s" % (fix[0], fix[3])
+					r[1][0] = fix[0]
+					break
+
+		for i,v in rel_glob_dat:
+			#print i,v
+			print "%x: %x %x" % (i,v[0], v[1])
+
+		self._write_list(rel_glob_dat, 2)
+
+
 
 import sys, os
 def patch_elf(orig):
 	path,ext = os.path.splitext(orig)
-	dest = path+"_r1"+ext
 
-	print "Patch %s to %s" % (orig, dest)
-	os.system("cp " + orig + " " + dest)
-
-	m = MMFixer(dest)
 	# R1
+	dest = path+"_r1"+ext
+	os.system("cp " + orig + " " + dest)
+	m = MMFixer(dest)
+	print "\nPatch %s to %s" % (orig, dest)
 	m.fix_eheader()
 	m.fix_pheader()
+	m.fp.close()
+
 	# R2
+	orig, dest = dest, path+"_r2"+ext
+	os.system("cp " + orig + " " + dest)
+	print "\nPatch %s to %s" % (orig, dest)
+	m = MMFixer(dest)
+	m.remove_init_func()
+	m.fix_relocation()
+	m.fp.close()
 
 if __name__ == "__main__":
 	default_target = "/Users/cpeng/Downloads/mm352/dump/libaspirecommon.so"
