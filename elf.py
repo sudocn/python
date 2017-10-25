@@ -913,6 +913,7 @@ class ELFWriter(ELFImage):
 			else:
 				raise Exception("_write_list: unsupported write bs number %d" % bs)
 
+import relocation
 class MMFixer(ELFWriter):
 	def fix_eheader(self):
 		self.ehdr.e_shoff = 0
@@ -942,7 +943,15 @@ class MMFixer(ELFWriter):
 		dyns.append((0,0))
 		self._write_dynamic(dyns)
 
-	def fix_relocation(self):
+	def fix_JNI_OnLoad(self, entry):
+		dynsym = self.load_section(".dynsym")
+		idx = dynsym.get_id("JNI_OnLoad")
+		addr = self.get_section_hdr(".dynsym").sh_offset
+		addr += idx * 16 + 4  # sym table entry size = 16, plus 4 bytes of st_name
+		print "patch JNI_OnLoad id = %d, addr %x <- %x" %(idx, addr, entry)
+		self._write_list([(addr, entry)])
+
+	def fix_relocation(self, relo_file):
 		def load_rel_section(sec_name):
 			r = []
 			#self.dynsym = dynsym
@@ -962,8 +971,7 @@ class MMFixer(ELFWriter):
 			r2 = [ x for x in rel_plt if x[1][1] & 0xff == type_id]
 			return r1 + r2
 
-		import relocation
-		base = 0x76833000
+		base = 0#0x76833000
 		'''
 		0     1        2        3
 		11d88 76833000 RELATIVE 
@@ -979,7 +987,9 @@ class MMFixer(ELFWriter):
 		121a0 400fbb79 JMP_SLOT __cxa_finalize
 
 		'''
-		rel = relocation.relocate("libaspirecommon.relo")
+		rel = relocation.relocate(relo_file)
+		base = [x[1] for x in rel if x[2] == 'RELATIVE'][0]
+		print "base = %x" % base
 		start = rel[0][0] - base
 		end   = rel[-1][0] - base
 		print "%x %x" % (start,end) 
@@ -1066,21 +1076,25 @@ def patch_elf(orig):
 	path,ext = os.path.splitext(orig)
 
 	# R1
-	dest = path+"_r1"+ext
-	os.system("cp " + orig + " " + dest)
+	src, dest = orig, path+"_r1"+ext
+	os.system("cp " + src + " " + dest)
 	m = MMFixer(dest)
-	print "\nPatch %s to %s" % (orig, dest)
+	print "\nPatch %s to %s" % (src, dest)
 	m.fix_eheader()
 	m.fix_pheader()
 	m.fp.close()
 
 	# R2
-	orig, dest = dest, path+"_r2"+ext
-	os.system("cp " + orig + " " + dest)
-	print "\nPatch %s to %s" % (orig, dest)
+	src, dest = dest, path+"_r2"+ext
+	os.system("cp " + src + " " + dest)
+	print "\nPatch %s to %s" % (src, dest)
 	m = MMFixer(dest)
 	m.remove_init_func()
-	m.fix_relocation()
+	m.fix_relocation(path+".relo")
+
+	base, entry = relocation.jni_address(orig, "JNI_OnLoad.log")
+	if entry > 0:
+		m.fix_JNI_OnLoad(entry)
 	m.fp.close()
 
 if __name__ == "__main__":
