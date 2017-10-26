@@ -80,6 +80,14 @@ DT_NEEDED = 1
 DT_STRSZ  = 10
 DT_SYMENT = 11
 
+# Relocation types
+R_ARM_JUMP_SLOT = 22
+R_ARM_GLOB_DAT = 21
+R_ARM_ABS32 = 2
+R_ARM_REL32 = 3
+R_ARM_RELATIVE = 23
+R_ARM_COPY = 20
+
 try:
 	from awesome_print import ap as pp
 except:
@@ -380,7 +388,7 @@ class ELF32Rel:
 		21 : "R_ARM_GLOB_DAT",
 		2 : "R_ARM_ABS32",
 		3 : "R_ARM_REL32",
-		23 : "R_ARM_RELATIE",
+		23 : "R_ARM_RELATIVE",
 		20 : "R_ARM_COPY"
 	}
 
@@ -953,26 +961,77 @@ class MMFixer(ELFWriter):
 
 	def fix_relocation(self, relo_file):
 		def load_rel_section(sec_name):
-			r = []
-			#self.dynsym = dynsym
 			sec_hdr = self.get_section_hdr(sec_name)
-			content = self._read_bytes(sec_hdr.sh_offset, sec_hdr.sh_size)
-			for idx in range(0, len(content), 8):
-				offset, info = struct.unpack('<II', content[idx:idx+8])
-				r.append([idx + sec_hdr.sh_offset, [offset, info]])
+			rel_sec = self.load_section(sec_name)
+			addr_list = range(sec_hdr.sh_offset, sec_hdr.sh_size + sec_hdr.sh_offset, 8)
+			r = zip(addr_list, map(list, rel_sec.rels))
 			return r
 
 		def load_rel_type(type_id):
-			rel_dyn = load_rel_section(".rel.dyn")
-			rel_plt = load_rel_section(".rel.plt")
+			if type_id == R_ARM_JUMP_SLOT:
+				rel_plt = load_rel_section(".rel.plt")
 
-			#print rel_dyn, type_id
-			r1 = [ x for x in rel_dyn if x[1][1] & 0xff == type_id]
-			r2 = [ x for x in rel_plt if x[1][1] & 0xff == type_id]
-			return r1 + r2
+				if [x for x in rel_plt if x[1][1] & 0xff != R_ARM_JUMP_SLOT]:
+					raise Exception("Non R_ARM_JUMP_SLOT relocation appears in .rel.plt")
+				
+				return rel_plt
+			else:
+				rel_dyn = load_rel_section(".rel.dyn")
+				return [ x for x in rel_dyn if x[1][1] & 0xff == type_id]
 
-		base = 0#0x76833000
+		def fix_relative_relocation():
+			#print RELATIVE
+			relative_fix = [[x[0], x[1] - base] for x in work_area if x[0] in RELO_RELATIVE]
+			print "Patch RELATVIE relocatoin slots ..."
+			self._write_list(relative_fix)
+
+			# check if anything missing
+			rel_entries = load_rel_type(R_ARM_RELATIVE)
+			# rel_entries.append([99,[81,72]]) # for test only
+			unhandled = set([x[1][0] for x in rel_entries]) - set(x[0] for x in relative_fix)
+			if unhandled:
+				print "WARNING: Not relocated RELATIVE address: "
+				print list(unhandled)
+
+		def fix_glob_jmp_relocation(relo_type, relo_log):
+			RELO_DICT = { x[1]: (x[0], x[2])  for x in relo_log if x[1] != 0}
+
+			for addr,ptr,name in [ x for x in relo_log if x[1] == 0]:
+				print "INFO:  symbol %s (id %x) @ %x not resolved (ptr == 0)" % (name, DYNSYM.get_id(name), addr)
+
+			# got_fix = [ [x[0], x[1], DYNSYM.get_id(RELO_DICT[x[1]][1]), RELO_DICT[x[1]][1]]  for x in work_area if x[1] !=0 and x[1] in RELO_DICT]
+			got_fix = []
+			for addr, ptr in work_area:
+				if ptr in RELO_DICT:
+					function_name = RELO_DICT[ptr][1]
+					got_fix.append([addr, ptr, DYNSYM.get_id(function_name), function_name])
+
+			for i,v,d,n in got_fix: print "%x: %x %x %s" % (i,v,d,n)
+
+			# 6. fix GLOB_DAT slots in .rel.dyn & .rel.plt
+			rel_entries = load_rel_type(relo_type)
+			print "rel_entries len = ", len(rel_entries)
+			for r in rel_entries:
+				i,v = r
+				print "%x: %x %x %x  -> " % (i, v[0], v[1]>>0x8, v[1] & 0xff),
+				for fix in got_fix:
+					if v[1] >>0x8 == fix[2]:
+						print "%x %s" % (fix[0], fix[3])
+						r[1][0] = fix[0]
+						break
+
+			for i,v in rel_entries: print "%x: %x %x" % (i,v[0], v[1])
+
+			if relo_type == R_ARM_GLOB_DAT:
+				print "Patch GLOB_DAT relocatoin slots ..."
+			else:
+				print "Patch JMP_SLOT relocatoin slots ..."
+			self._write_list(rel_entries, 2)
+
+
+		base = 0
 		'''
+		# relocate() result
 		0     1        2        3
 		11d88 76833000 RELATIVE 
 		11ec4 76833000 RELATIVE 
@@ -992,12 +1051,12 @@ class MMFixer(ELFWriter):
 		print "base = %x" % base
 		start = rel[0][0] - base
 		end   = rel[-1][0] - base
-		print "%x %x" % (start,end) 
+		print "possible .got address range [%x, %x]" % (start,end) 
 
+		# 1. create work area, from the address range of relocation occured
 		work_area = []
 		idx = 0
 		content = self._read_bytes(start , end - start + 4)
-		# 1. create work area, from the address range of relocation occured
 		for idx in range(0, len(content), 4):
 			work_area.append([start + idx, struct.unpack('<I', content[idx:idx+4])[0]])
 
@@ -1006,70 +1065,26 @@ class MMFixer(ELFWriter):
 		work_area = [x for x in work_area if x[0] not in DYNAMIC]
 
 		# 3. fix RELATIVE relocation
-		RELATIVE = [x[0]-base for x in rel if x[2] == 'RELATIVE']
-		#print RELATIVE
-		relative_fix = [[x[0], x[1] - base] for x in work_area if x[0] in RELATIVE]
-		self._write_list(relative_fix)
+		RELO_RELATIVE = [x[0]-base for x in rel if x[2] == 'RELATIVE']
+		fix_relative_relocation()
 
 		# 4. exclude RELATIVEs from work area 
-		work_area = [x for x in work_area if x[0] not in RELATIVE]
+		work_area = [x for x in work_area if x[0] not in RELO_RELATIVE]
 
 		# 5. fix GLOB_DAT
-		GLOB_DAT = { x[1]: (x[0] - base, x[3])  for x in rel if x[2] == 'GLOB_DAT'}
 		DYNSYM = self.load_section(".dynsym")
 		#print DYNSTR
-		#print GLOB_DAT
-		glob_dat_fix = [ [x[0], x[1], DYNSYM.get_id(GLOB_DAT[x[1]][1]), GLOB_DAT[x[1]][1]]  for x in work_area if x[1] !=0 and x[1] in GLOB_DAT]
-		print glob_dat_fix
-		for i,v,d,n in glob_dat_fix:
-			print "%x: %x %x %s" % (i,v,d,n)
 
-		# 6. fix GLOB_DAT slots in .rel.dyn & .rel.plt
-		rel_glob_dat = load_rel_type(21)
-		for r in rel_glob_dat:
-			i,v = r
-			print "%x: %x %x %x" % (i, v[0], v[1]>>0x8, v[1] & 0xff)
-			for fix in glob_dat_fix:
-				if v[1] >>0x8 == fix[2]:
-					print "  -> %x %s" % (fix[0], fix[3])
-					r[1][0] = fix[0]
-					break
-
-		for i,v in rel_glob_dat:
-			#print i,v
-			print "%x: %x %x" % (i,v[0], v[1])
-
-		self._write_list(rel_glob_dat, 2)
+		# GLOB_DAT format {relocated_pointer: (got_slot_addr, function_name)}
+		RELO_GLOB_DAT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'GLOB_DAT']
+		fix_glob_jmp_relocation(R_ARM_GLOB_DAT, RELO_GLOB_DAT)
 
 		# 7. exclude GLOB_DATs from work area
 		# work_area = [x for x in work_area if x[0] not in GLOB_DAT]
 
 		# 8. fix JMP_SLOT
-		JMP_SLOT = { x[1]: (x[0] - base, x[3])  for x in rel if x[2] == 'JMP_SLOT'}
-		#print JMP_SLOT
-		jmp_slot_fix = [ [x[0], x[1], DYNSYM.get_id(JMP_SLOT[x[1]][1]), JMP_SLOT[x[1]][1]]  for x in work_area if x[1] !=0 and x[1] in JMP_SLOT]
-		print jmp_slot_fix
-		for i,v,d,n in jmp_slot_fix:
-			print "%x: %x %x %s" % (i,v,d,n)
-
-		# 6. fix JMP_SLOT slots in .rel.dyn & .rel.plt
-		rel_glob_dat = load_rel_type(22)
-		for r in rel_glob_dat:
-			i,v = r
-			print "%x: %x %x %x" % (i, v[0], v[1]>>0x8, v[1] & 0xff)
-			for fix in jmp_slot_fix:
-				if v[1] >>0x8 == fix[2]:
-					print "  -> %x %s" % (fix[0], fix[3])
-					r[1][0] = fix[0]
-					break
-
-		for i,v in rel_glob_dat:
-			#print i,v
-			print "%x: %x %x" % (i,v[0], v[1])
-
-		self._write_list(rel_glob_dat, 2)
-
-
+		RELO_JMP_SLOT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'JMP_SLOT']
+		fix_glob_jmp_relocation(R_ARM_JUMP_SLOT, RELO_JMP_SLOT)
 
 import sys, os
 def patch_elf(orig):
@@ -1078,8 +1093,9 @@ def patch_elf(orig):
 	# R1
 	src, dest = orig, path+"_r1"+ext
 	os.system("cp " + src + " " + dest)
-	m = MMFixer(dest)
 	print "\nPatch %s to %s" % (src, dest)
+
+	m = MMFixer(dest)
 	m.fix_eheader()
 	m.fix_pheader()
 	m.fp.close()
@@ -1088,6 +1104,7 @@ def patch_elf(orig):
 	src, dest = dest, path+"_r2"+ext
 	os.system("cp " + src + " " + dest)
 	print "\nPatch %s to %s" % (src, dest)
+
 	m = MMFixer(dest)
 	m.remove_init_func()
 	m.fix_relocation(path+".relo")
