@@ -982,7 +982,7 @@ class MMFixer(ELFWriter):
 		def fix_relative_relocation():
 			#print RELATIVE
 			relative_fix = [[x[0], x[1] - base] for x in work_area if x[0] in RELO_RELATIVE]
-			print "Patch RELATVIE relocatoin slots ..."
+			print "Patch %d RELATVIE relocatoin slots ..." % len(relative_fix)
 			self._write_list(relative_fix)
 
 			# check if anything missing
@@ -990,10 +990,45 @@ class MMFixer(ELFWriter):
 			# rel_entries.append([99,[81,72]]) # for test only
 			unhandled = set([x[1][0] for x in rel_entries]) - set(x[0] for x in relative_fix)
 			if unhandled:
-				print "WARNING: Not relocated RELATIVE address: "
+				print "WARNING: Not relocated RELATIVE address: %d of %d total" % (len(unhandled), len(rel_entries))
 				print list(unhandled)
 
 		def fix_glob_jmp_relocation(relo_type, relo_log):
+			RELO_DICT = { x[2]: (x[0], x[1])  for x in relo_log }
+			anchor_dict = {R_ARM_GLOB_DAT: "__stack_chk_guard", R_ARM_JUMP_SLOT: "__cxa_atexit"}
+
+			anchor = anchor_dict[relo_type]
+			rel_entries = load_rel_type(relo_type)
+			for i,v in rel_entries:
+				offset, info = v
+				idx = info >> 0x8
+				fname = DYNSYM.get_sym(idx)[0]
+				active_pos, active_ptr = RELO_DICT[fname]
+				if active_pos != offset: 
+					print "*** OFFSET Mismatch ", "%x: %x %x %s (%x %x)" % (i, offset, idx, fname, active_pos, active_ptr)
+
+				possible_loc = []
+				if active_ptr != 0:
+					possible_loc = [x for x in work_area if x[1] == active_ptr]
+
+				if fname == anchor:
+					shift = offset - possible_loc[0][0]
+					print "*** shift %x" % shift
+				print "%x: %x %x %-36s (%x %x) : " % (i, offset, idx, fname, active_pos, active_ptr),
+				for location in possible_loc:
+					#print location, 
+					if location:	
+						print "(%x: %x)" % (location[0], offset - location[0] ),
+				print 
+
+			# modification
+			rel_fix = [ [x[0], x[1][0] - shift] for x in rel_entries]
+			#for l in rel_fix: print "  %x: %x" % (l[0], l[1])
+
+			print "Patch %d %s relocatoin slots ..." % (len(rel_fix), "GLOB_DAT" if relo_type == R_ARM_GLOB_DAT else "JUMP_SLOT")
+			self._write_list(rel_fix)
+
+		def __fix_glob_jmp_relocation(relo_type, relo_log):
 			RELO_DICT = { x[1]: (x[0], x[2])  for x in relo_log if x[1] != 0}
 
 			for addr,ptr,name in [ x for x in relo_log if x[1] == 0]:
@@ -1022,10 +1057,7 @@ class MMFixer(ELFWriter):
 
 			for i,v in rel_entries: print "%x: %x %x" % (i,v[0], v[1])
 
-			if relo_type == R_ARM_GLOB_DAT:
-				print "Patch GLOB_DAT relocatoin slots ..."
-			else:
-				print "Patch JMP_SLOT relocatoin slots ..."
+			print "Patch %d %s relocatoin slots ..." % (len(rel_entries), "GLOB_DAT" if relo_type == R_ARM_GLOB_DAT else "JUMP_SLOT")
 			self._write_list(rel_entries, 2)
 
 
@@ -1075,6 +1107,7 @@ class MMFixer(ELFWriter):
 		DYNSYM = self.load_section(".dynsym")
 		#print DYNSTR
 
+		# 6. fix GLOB_DAT slots in .rel.dyn & .rel.plt
 		# GLOB_DAT format {relocated_pointer: (got_slot_addr, function_name)}
 		RELO_GLOB_DAT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'GLOB_DAT']
 		fix_glob_jmp_relocation(R_ARM_GLOB_DAT, RELO_GLOB_DAT)
@@ -1100,8 +1133,10 @@ def patch_elf(orig):
 	m.fix_pheader()
 	m.fp.close()
 
-	# R2
-	src, dest = dest, path+"_r2"+ext
+	# R2 - obsoleted
+
+	# R3
+	src, dest = dest, path+"_r3"+ext
 	os.system("cp " + src + " " + dest)
 	print "\nPatch %s to %s" % (src, dest)
 
