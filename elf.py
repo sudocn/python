@@ -636,6 +636,9 @@ class ELFImage:
 		# TODO: fake .got
 		# TODO: fake .plt
 
+		# sort by offset in file (memory)
+		self.sections.sort(key = lambda x:x.sh_offset)
+
 	def _read_bytes(self, off, size):
 		self.fp.seek(off, 0)
 		return self.fp.read(size)
@@ -995,31 +998,36 @@ class MMFixer(ELFWriter):
 
 		def fix_glob_jmp_relocation(relo_type, relo_log):
 			RELO_DICT = { x[2]: (x[0], x[1])  for x in relo_log }
-			anchor_dict = {R_ARM_GLOB_DAT: "__stack_chk_guard", R_ARM_JUMP_SLOT: "__cxa_atexit"}
+			print "LEN RELO_DICT", len(RELO_DICT), "LEN RELO_LOG", len(relo_log)
+			anchor = {R_ARM_GLOB_DAT: "__stack_chk_guard", R_ARM_JUMP_SLOT: "__cxa_atexit"}[relo_type]
 
-			anchor = anchor_dict[relo_type]
 			rel_entries = load_rel_type(relo_type)
+			big_table = []
 			for i,v in rel_entries:
 				offset, info = v
 				idx = info >> 0x8
 				fname = DYNSYM.get_sym(idx)[0]
-				active_pos, active_ptr = RELO_DICT[fname]
-				if active_pos != offset: 
-					print "*** OFFSET Mismatch ", "%x: %x %x %s (%x %x)" % (i, offset, idx, fname, active_pos, active_ptr)
+				linker_pos, linker_ptr = RELO_DICT[fname]
+				if linker_pos != offset: 
+					print "*** OFFSET Mismatch ", "%x: %x %x %s (%x %x)" % (i, offset, idx, fname, linker_pos, linker_ptr)
 
-				possible_loc = []
-				if active_ptr != 0:
-					possible_loc = [x for x in work_area if x[1] == active_ptr]
+				match_locs = []
+				if linker_ptr != 0:
+					match_locs = [x for x in work_area if x[1] == linker_ptr]
+				
+				big_table.append([i, offset, idx, fname, linker_pos, linker_ptr])
 
-				if fname == anchor:
-					shift = offset - possible_loc[0][0]
-					print "*** shift %x" % shift
-				print "%x: %x %x %-36s (%x %x) : " % (i, offset, idx, fname, active_pos, active_ptr),
-				for location in possible_loc:
+				print "%x: %x %x %-36s (%x %x) : " % (i, offset, idx, fname, linker_pos, linker_ptr),
+
+				for location in match_locs:
 					#print location, 
 					if location:	
 						print "(%x: %x)" % (location[0], offset - location[0] ),
 				print 
+
+				if fname == anchor:
+					shift = offset - match_locs[0][0]
+					print "*** shift %x" % shift
 
 			# modification
 			rel_fix = [ [x[0], x[1][0] - shift] for x in rel_entries]
@@ -1027,7 +1035,44 @@ class MMFixer(ELFWriter):
 
 			print "Patch %d %s relocatoin slots ..." % (len(rel_fix), "GLOB_DAT" if relo_type == R_ARM_GLOB_DAT else "JUMP_SLOT")
 			self._write_list(rel_fix)
+			return [ x[0] - shift for x in relo_log ]
 
+		def fix_abs_relocation():
+			RELO_DICT = { x[0]: (x[1], x[2])  for x in RELO_ABS }
+			print "LEN RELO_DICT", len(RELO_DICT), "LEN RELO_ABS", len(RELO_ABS)
+			#print RELO_DICT
+			anchor = "__cxa_pure_virtual"
+			rel_entries = load_rel_type(R_ARM_ABS32)
+			for i,v in rel_entries:
+				offset, info = v
+				idx = info >> 0x8
+				fname = DYNSYM.get_sym(idx)[0]
+				active_ptr, active_name = RELO_DICT[offset]
+				if active_name != fname: 
+					print "*** OFFSET Mismatch ", "%x: %x %x %s (%x %s)" % (i, offset, idx, fname, active_ptr, active_name)
+
+				match_locs = []
+				if active_ptr != 0:
+					match_locs = [x for x in work_area if x[1] == active_ptr]
+
+				#if fname == anchor:
+				#	shift = offset - match_locs[0][0]
+				#	print "*** shift %x" % shift
+				print "%x: %x %x %-36s (%x) : " % (i, offset, idx, fname, active_ptr),
+				for location in match_locs:
+					#print location, 
+					if location:	
+						print "(%x: %x)" % (location[0], offset - location[0] ),
+				print 
+
+			# modification
+			rel_fix = [ [x[0], x[1][0]] for x in rel_entries]
+			#for l in rel_fix: print "  %x: %x" % (l[0], l[1])
+
+			print "Patch %d ABS relocatoin slots ..." % (len(rel_fix))
+			#self._write_list(rel_fix)
+
+		'''
 		def __fix_glob_jmp_relocation(relo_type, relo_log):
 			RELO_DICT = { x[1]: (x[0], x[2])  for x in relo_log if x[1] != 0}
 
@@ -1059,7 +1104,7 @@ class MMFixer(ELFWriter):
 
 			print "Patch %d %s relocatoin slots ..." % (len(rel_entries), "GLOB_DAT" if relo_type == R_ARM_GLOB_DAT else "JUMP_SLOT")
 			self._write_list(rel_entries, 2)
-
+		'''
 
 		base = 0
 		'''
@@ -1093,8 +1138,10 @@ class MMFixer(ELFWriter):
 			work_area.append([start + idx, struct.unpack('<I', content[idx:idx+4])[0]])
 
 		# 2. exclude .dynamic section from work area
+		print "work_area len", len(work_area)
 		DYNAMIC = range(self.dynamic.p_offset, self.dynamic.p_filesz + self.dynamic.p_offset, 4)
 		work_area = [x for x in work_area if x[0] not in DYNAMIC]
+		print "work_area len", len(work_area)
 
 		# 3. fix RELATIVE relocation
 		RELO_RELATIVE = [x[0]-base for x in rel if x[2] == 'RELATIVE']
@@ -1102,22 +1149,36 @@ class MMFixer(ELFWriter):
 
 		# 4. exclude RELATIVEs from work area 
 		work_area = [x for x in work_area if x[0] not in RELO_RELATIVE]
+		print "work_area len", len(work_area)
 
 		# 5. fix GLOB_DAT
 		DYNSYM = self.load_section(".dynsym")
 		#print DYNSTR
 
-		# 6. fix GLOB_DAT slots in .rel.dyn & .rel.plt
+		# 6. fix JMP_SLOT
+		RELO_JMP_SLOT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'JMP_SLOT']
+		fix = fix_glob_jmp_relocation(R_ARM_JUMP_SLOT, RELO_JMP_SLOT)
+		print fix
+		work_are = [x for x in work_area if x not in fix]
+		print "work_area len", len(work_area)
+		work_area = [x for x in work_area if x[0] not in [y[0] for y in RELO_JMP_SLOT]]
+		print "work_area len", len(work_area)
+
+		# 7. fix GLOB_DAT slots in .rel.dyn & .rel.plt
 		# GLOB_DAT format {relocated_pointer: (got_slot_addr, function_name)}
 		RELO_GLOB_DAT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'GLOB_DAT']
-		fix_glob_jmp_relocation(R_ARM_GLOB_DAT, RELO_GLOB_DAT)
+		fix = fix_glob_jmp_relocation(R_ARM_GLOB_DAT, RELO_GLOB_DAT)
+		work_are = [x for x in work_area if x not in fix]
+		print "work_area len", len(work_area)
+		work_area = [x for x in work_area if x[0] not in [y[0] for y in RELO_GLOB_DAT]]
+		print "work_area len", len(work_area)
 
-		# 7. exclude GLOB_DATs from work area
+		# 8. exclude GLOB_DATs from work area
 		# work_area = [x for x in work_area if x[0] not in GLOB_DAT]
 
-		# 8. fix JMP_SLOT
-		RELO_JMP_SLOT = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'JMP_SLOT']
-		fix_glob_jmp_relocation(R_ARM_JUMP_SLOT, RELO_JMP_SLOT)
+		# 9. fix ABS
+		RELO_ABS = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'ABS']
+		fix_abs_relocation()
 
 import sys, os
 def patch_elf(orig):

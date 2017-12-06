@@ -9,7 +9,7 @@ def relocate(fname):
 			r_addr = arr[2]
 			r_value = arr[4]
 			r_sym_name = ''
-			if r_type in ["JMP_SLOT", "GLOB_DAT"]:
+			if r_type in ["JMP_SLOT", "GLOB_DAT", "ABS"]:
 				r_sym_name = arr[5]
 
 			got.append([int(r_addr,16), int(r_value, 16), r_type, r_sym_name])

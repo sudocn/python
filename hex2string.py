@@ -15,5 +15,13 @@ def hex2string(hex_string):
 if __name__ == "__main__":
     if (len(sys.argv) < 2):
         print "usage: " + sys.argv[0] + " hex_stirng"
-    else:
+    elif len(sys.argv) == 2:
         print hex2string(sys.argv[1])
+    else:
+        msg = ''
+        for word in sys.argv[1:]:
+            if len(word) != 8:
+                raise Exception("words must be 32 bits (8 hex numbers)")
+            wstr = hex2string(word)[::-1]
+            msg +=wstr
+        print msg
