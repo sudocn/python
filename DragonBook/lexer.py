@@ -8,15 +8,32 @@ class Tag(object):
     TRUE = 258
     FALSE = 259
 
+    @classmethod
+    def tostring(cls, t):
+        dc = {cls.NUM:"NUM", cls.ID:"ID", cls.TRUE:"TRUE", cls.FALSE:"FALSE"}
+        if t in dc:
+            return dc[t]
+        else:
+            return "{}".format(chr(t), t)
+
 class Token(object):
     def __init__(self, t):
+        if isinstance(t, str):
+            t = ord(t)
+        assert(isinstance(t, int))
         self.tag = t
+
+    def __str__(self):
+        return '<' + Tag.tostring(self.tag) + '>'
 
 class Num(Token):
     def __init__(self, v):
         assert(isinstance(v, (int, float)))
         super(Num, self).__init__(Tag.NUM)
         self.value = v
+    
+    def __str__(self):
+        return '<{},{}>'.format(Tag.tostring(self.tag), self.value)
 
 class Word(Token):
     def __init__(self, t, s):
@@ -24,13 +41,19 @@ class Word(Token):
         super(Word, self).__init__(t)
         self.lexeme = s
 
+    def __str__(self):
+        return '<{},{}>'.format(Tag.tostring(self.tag), self.lexeme)
 
 #
 #
 #
 
 def PEEK():
-    return sys.stdin.read(1)
+    c = sys.stdin.read(1)
+    if c:
+        return c
+    else:
+        raise Exception("EOF")
 
 class Lexer(object):
     def __init__(self):
@@ -54,10 +77,10 @@ class Lexer(object):
             else:
                 break
 
-        if self.peek.isnum():
+        if self.peek.isdigit():
             v = int(self.peek)
             self.peek = PEEK()
-            while self.peek.isnum():
+            while self.peek.isdigit():
                 v = 10*v + int(self.peek)
                 self.peek = PEEK()
             return Num(v)
@@ -90,9 +113,10 @@ class CaseLexer(unittest.TestCase):
 
     def test_lexer(self):
         lex = Lexer()
+        print lex.words
 
-    def test_scan(self):
-        lex = Lexer()
-        while True:
-            t = lex.scan()
-            print t
+if __name__ == "__main__":
+    lex = Lexer()
+    while True:
+        t = lex.scan()
+        print t
