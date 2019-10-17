@@ -53,7 +53,7 @@ def PEEK():
     if c:
         return c
     else:
-        raise Exception("EOF")
+        raise EOFError()
 
 class Lexer(object):
     def __init__(self):
@@ -100,6 +100,23 @@ class Lexer(object):
         self.peek = ' '
         return Token(p)
 
+def parse(stream=None):
+    lex = Lexer()
+    tstack = []
+    if stream:
+        saved_stdin = sys.stdin
+        sys.stdin = stream
+    try:
+        while True:
+            t = lex.scan()
+            tstack.append(t)
+    except EOFError:
+        pass
+    finally:
+        if stream:
+            sys.stdin = saved_stdin
+        return ' '.join(map(str,tstack))
+
 import unittest
 class CaseLexer(unittest.TestCase):
     def test_tokens(self):
@@ -115,8 +132,14 @@ class CaseLexer(unittest.TestCase):
         lex = Lexer()
         print lex.words
 
+    def test_parsefile(self):
+        with open("starconv.lex") as f:
+            expect = f.read().rstrip("\r\n") # remove the tailing \r or \n
+        with open("starconv.c") as f:
+            result = parse(f)
+
+        self.maxDiff = None
+        self.assertMultiLineEqual(result.replace(' ', '\n'), expect.replace(' ', '\n'))
+
 if __name__ == "__main__":
-    lex = Lexer()
-    while True:
-        t = lex.scan()
-        print t,
+    print parse()
