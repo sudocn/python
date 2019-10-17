@@ -69,13 +69,13 @@ class Lexer(object):
 
     def scan(self):
         while True:
-            self.peek = PEEK()
             if self.peek in (' ', '\t'):
-                continue
+                pass
             elif self.peek == '\n':
                 self.line += 1
             else:
                 break
+            self.peek = PEEK()
 
         if self.peek.isdigit():
             v = int(self.peek)
@@ -119,4 +119,4 @@ if __name__ == "__main__":
     lex = Lexer()
     while True:
         t = lex.scan()
-        print t
+        print t,
