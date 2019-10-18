@@ -48,12 +48,32 @@ class Word(Token):
 #
 #
 
-def PEEK():
-    c = sys.stdin.read(1)
-    if c:
+class Source(object):
+    def __init__(self, stream=sys.stdin):
+        self.stream = stream
+        self.reserve = ''
+    
+    def getc(self):
+        if self.reserve:
+            c = self.reserve
+            self.reserve = ''
+        else:
+            c = self.stream.read(1)
+
+        if not c: raise EOFError()
         return c
-    else:
-        raise EOFError()
+
+    def ungetc(self, c):
+        if self.reserve:
+            raise Exception("CAN NOT UNGET TWICE!!")
+        self.reserve = c
+
+source = None
+def PEEK(): # peek actually read out the char
+    return source.getc()
+
+def UNPEEK(c):
+    source.ungetc(c)
 
 class Lexer(object):
     def __init__(self):
@@ -68,15 +88,36 @@ class Lexer(object):
         self.words[t.lexeme] = t
 
     def scan(self):
+
+        # space and line ending
         while True:
             if self.peek in (' ', '\t'):
                 pass
             elif self.peek == '\n':
                 self.line += 1
+            # comments
+            elif self.peek == '/':
+                nextpeek = PEEK()
+                if nextpeek == '/': # //
+                    skip = PEEK()
+                    while skip != '\n':
+                        skip = PEEK()
+                    self.peek = skip
+                elif nextpeek == '*': # /* ... */
+                    skip = PEEK()
+                    while True:
+                        if skip == '*' and PEEK() == '/':
+                            break
+                        skip = PEEK()
+                else:
+                    print "Unpkeek"
+                    UNPEEK(nextpeek)
+                    break
             else:
                 break
             self.peek = PEEK()
-
+                
+        # numbers
         if self.peek.isdigit():
             v = int(self.peek)
             self.peek = PEEK()
@@ -85,6 +126,7 @@ class Lexer(object):
                 self.peek = PEEK()
             return Num(v)
 
+        # string tokens
         if self.peek.isalpha():
             b = [self.peek]
             self.peek = PEEK()
@@ -100,12 +142,11 @@ class Lexer(object):
         self.peek = ' '
         return Token(p)
 
-def parse(stream=None):
+def parse(stream=sys.stdin):
+    global source
     lex = Lexer()
     tstack = []
-    if stream:
-        saved_stdin = sys.stdin
-        sys.stdin = stream
+    source = Source(stream)
     try:
         while True:
             t = lex.scan()
@@ -113,8 +154,6 @@ def parse(stream=None):
     except EOFError:
         pass
     finally:
-        if stream:
-            sys.stdin = saved_stdin
         return ' '.join(map(str,tstack))
 
 import unittest
