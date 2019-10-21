@@ -110,7 +110,6 @@ class Lexer(object):
                             break
                         skip = PEEK()
                 else:
-                    print "Unpkeek"
                     UNPEEK(nextpeek)
                     break
             else:

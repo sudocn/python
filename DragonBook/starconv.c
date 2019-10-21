@@ -1,7 +1,20 @@
+/*
+  * This is a multi line comments
+  * line
+  * line
+*/
 #include "stdlib.h"
 #include "stdio.h"
 
-int four(int in)
+int divide(int a, int b)
+{
+	float c = a / b;
+	a = 5/2;
+	b = c / 8.008;
+}
+
+// single line comments
+int four(int in /* inline comments */)
 {
 	int r, v; 
 	
@@ -13,7 +26,7 @@ int four(int in)
 	return r;
 }
 
-int five(int in)
+int five(int in)	// single line comments after useful text
 {
 	int r, v; 
 	
