@@ -7,10 +7,11 @@ class Tag(object):
     ID = 257
     TRUE = 258
     FALSE = 259
+    OP = 260
 
     @classmethod
     def tostring(cls, t):
-        dc = {cls.NUM:"NUM", cls.ID:"ID", cls.TRUE:"TRUE", cls.FALSE:"FALSE"}
+        dc = {cls.NUM:"NUM", cls.ID:"ID", cls.TRUE:"TRUE", cls.FALSE:"FALSE", cls.OP:"OP"}
         if t in dc:
             return dc[t]
         else:
@@ -43,6 +44,35 @@ class Word(Token):
 
     def __str__(self):
         return '<{},{}>'.format(Tag.tostring(self.tag), self.lexeme)
+
+class Oper(Token):
+    '''
+    Operators 
+    '''
+    LT = 1
+    LE = 2
+    EQ = 3
+    NE = 4
+    GE = 5
+    GT = 6
+
+    volcabulary = {
+        '<' : LT, 
+        '<=': LE, 
+        '==': EQ, 
+        '!=': NE, 
+        '>=': GE, 
+        '>': GT}
+
+    def __init__(self, t):
+        print "oper => '{}'".format(t)
+        assert(t in self.volcabulary)
+        super(Oper, self).__init__(Tag.OP)
+        self.type = self.volcabulary[t]
+        self.repr = t
+    
+    def __str__(self):
+        return '<{},{}>'.format(Tag.tostring(self.tag), self.repr)
 
 #
 #
@@ -88,7 +118,6 @@ class Lexer(object):
         self.words[t.lexeme] = t
 
     def scan(self):
-
         # space and line ending
         while True:
             if self.peek in (' ', '\t'):
@@ -117,11 +146,25 @@ class Lexer(object):
             self.peek = PEEK()
                 
         # numbers
-        if self.peek.isdigit():
-            v = int(self.peek)
+        #if self.peek.isdigit():
+        if self.peek in '.0123456789':
+            f = 1   # fraction
+            v = 0
+            if self.peek == '.':
+                f = 10.0
+            else:
+                v = int(self.peek)
+
             self.peek = PEEK()
-            while self.peek.isdigit():
-                v = 10*v + int(self.peek)
+            while self.peek.isdigit() or (f == 1 and self.peek == '.'):
+                if self.peek == '.':
+                    f = 10.0
+                elif f > 1:
+                    v = v + int(self.peek) / f
+                    f *= 10
+                else:
+                    v = 10*v + int(self.peek)
+                
                 self.peek = PEEK()
             return Num(v)
 
@@ -136,6 +179,20 @@ class Lexer(object):
             if s not in self.words:
                 self.words[s] = Word(Tag.ID, s)
             return self.words[s]
+
+        # operators <, <=, ==, !=, >=, >
+        if self.peek in '<!=>':
+            nextpeek = PEEK()
+            op = self.peek
+            if nextpeek == '=': # 2 char operator
+                self.peek = PEEK()
+                return Oper(op + '=')
+            else:
+                UNPEEK(nextpeek)
+
+            if self.peek in '<>':
+                self.peek = PEEK()
+                return Oper(op)
 
         p = self.peek
         self.peek = ' '
@@ -152,8 +209,8 @@ def parse(stream=sys.stdin):
             tstack.append(t)
     except EOFError:
         pass
-    finally:
-        return ' '.join(map(str,tstack))
+
+    return ' '.join(map(str,tstack))
 
 import unittest
 class CaseLexer(unittest.TestCase):
@@ -163,8 +220,10 @@ class CaseLexer(unittest.TestCase):
         w1 = Word(Tag.TRUE, 'true')
         w2 = Word(Tag.FALSE, 'false')
         w3 = Word(Tag.ID, 'hello')
+        o1 = Oper('<')
+        o2 = Oper('==')
 
-        print t1,n1,w1,w2,w3
+        print t1,n1,w1,w2,w3,o1,o2
 
     def test_lexer(self):
         lex = Lexer()
