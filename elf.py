@@ -1,30 +1,11 @@
 #!/usr/bin/python
 
-'''
-def sec():
-    with open("section_ip.txt", "r") as f:
-        next = 0
-        for line in f:
-            #fields = line.split();
-            info = line[7:40]
-            off = line[50:57]
-            sz = line[57:64]
-            print info,
-            if int(off,16) != next:
-                print "*",
-            else:
-                print " ",
-            print off, sz,
-
-            next = int(off, 16) + int(sz, 16)
-            print "(%s)" % hex(next)
-'''
-
 import struct
 import sys
 import os
 import io
 import traceback
+from collections import namedtuple
 
 ELF_MAGIC = '\x7f\x45\x4c\x46'
 
@@ -238,10 +219,10 @@ class ELF32Phdr:
         self.p_memsz  = p_memsz
         self.p_flags  = p_flags
         self.p_align  = p_align
-    def type2str(self, type):
-        return dict_search_safe(self.dict_p_type, type)
+    def type_str(self):
+        return dict_search_safe(self.dict_p_type, self.p_type)
     def __str__(self):
-        return "  %-16s %8x %8x %8x %8x %8x" % (self.type2str(self.p_type), self.p_offset, self.p_vaddr, self.p_filesz, self.p_memsz, self.p_flags)
+        return "  %-16s %8x %8x %8x %8x %8x" % (self.type_str(), self.p_offset, self.p_vaddr, self.p_filesz, self.p_memsz, self.p_flags)
 
 class ELF32Shdr:
     dict_sh_type = {
@@ -260,7 +241,7 @@ class ELF32Shdr:
     0x70000000: "LOPROC",  0x70000001: "ARM_EXIDX", 0x70000003: "ARM_ATTRIBUTES",0x7fffffff: "HIPROC", 
     0x80000000: "LOUSER", 0xffffffff: "HIUSER"
     }
-#	def __init__(self, sh_name, sh_type, sh_flags, sh_addr, sh_offset, sh_size, sh_link, sh_info, sh_addralign, sh_entsize):
+
     def __init__(self, sh_name, sh_type, sh_offset, sh_size, sh_flags=0, sh_addr=0, sh_link=0, sh_info=0, sh_addralign=1, sh_entsize=0):
         self.sh_name = sh_name
         self.sh_type = sh_type
@@ -276,25 +257,24 @@ class ELF32Shdr:
         if isinstance(sh_name, str):
             self.name = sh_name
 
-    def type2str(self, type):
+    def type_str(self, type):
         return dict_search_safe(self.dict_sh_type, type)
     def __str__(self):
-        return "  %-24s %-16s %8x %8x %8x %8x" % (self.name, self.type2str(self.sh_type), self.sh_addr, self.sh_offset, self.sh_size, self.sh_entsize)
+        return "  %-24s %-16s %8x %8x %8x %8x" % (self.name, self.type_str(self.sh_type), self.sh_addr, self.sh_offset, self.sh_size, self.sh_entsize)
 
 class ELFStrTab:
     def __init__(self, content):
-        self.content = content
+        self.raw = content
         self.str_array = content.split(chr(0))
+
     def get_str(self, idx):
-        end = self.content.index(chr(0), idx)
-        return self.content[idx:end]#self.content.index(idx, chr(0))]
+        end = self.raw.index(chr(0), idx)
+        return self.raw[idx:end]
+
     def get_id(self, sym):
         idx = self.str_array.index(sym)
-        if self.get_str(idx) != sym:
-            print self.str_array
-            raise Exception("ELFStrTab: get_id mismatch!!! %d %s:%s" % (idx, self.get_str(idx), sym))
-        else:
-            return idx
+        assert self.get_str(idx) == sym, "ELFStrTab: get_id mismatch!!! %d %s:%s" % (idx, self.get_str(idx), sym)
+        return idx
 
 '''
 ######################################################################################
@@ -312,6 +292,7 @@ class ELFStrTab:
 
 ######################################################################################
 '''
+Elf32_Sym_Item = namedtuple("Elf32_Sym", 'st_name st_value st_size st_info st_other st_shndx name_str')
 class ELF32SymTab:
     dict_st_bind = {
         0: "LOCAL",
@@ -340,33 +321,42 @@ class ELF32SymTab:
         self.strtab = strtab
         self.symbols = []
         for idx in range(0, len(content), 16):
-            self.symbols.append(struct.unpack('<IIIbbH', content[idx:idx+16]))
+            item = list(struct.unpack('<IIIbbH', content[idx:idx+16]))
+            item.append(self.strtab.get_str(item[0]))
+            self.symbols.append(Elf32_Sym_Item(*item))
+        
         self.sym_name_array = [ self.strtab.get_str(x[0]) for x in self.symbols]
     '''
     def type2str(self, type):
         return dict_search_safe(self.dict_dt_type, type)
     '''
     def get_sym(self, id):
-        (st_name, st_value, st_size, st_info, st_other, st_shndx) = self.symbols[id]
-        return (self.strtab.get_str(st_name), st_value)
+        #(st_name, st_value, st_size, st_info, st_other, st_shndx) = self.symbols[id]
+        #return (self.strtab.get_str(st_name), st_value)
+        sym = self.symbols[id]
+        return (sym.name_str, sym.st_value)
 
     def get_id(self, sym_name):
         idx = self.sym_name_array.index(sym_name)
-        if self.get_sym(idx)[0] != sym_name:
-            print self.str_array
-            raise Exception("ELFStrTab: get_id mismatch!!! %d %s:%s" % (idx, self.get_sym(idx)[0], sym_name))
-        else:
-            return idx
+        assert self.symbols[idx].name_str == sym_name
+        return idx
 
     def __str__(self):
         output = ""
         for i,it in enumerate(self.symbols):
             #print "  %8x %-24s %x" % (it[0], '('+self.type2str(it[0])+')', it[1])
-            (st_name, st_value, st_size, st_info, st_other, st_shndx) = it
-            st_bind = st_info >> 4
-            st_type = st_info & 0xf 
-            output += "%4d: %8x %8x %-10s %-10s %d %d %s\n" % (i, st_value, st_size, self.dict_st_type[st_type], 
-                self.dict_st_bind[st_bind], st_other, st_shndx, self.strtab.get_str(st_name))
+            #(st_name, st_value, st_size, st_info, st_other, st_shndx) = it
+            st_bind = it.st_info >> 4
+            st_type = it.st_info & 0xf 
+            output += "%4d: %8x %8x %-10s %-10s %d %d %s\n" % (
+                i, 
+                it.st_value, 
+                it.st_size, 
+                self.dict_st_type[st_type], 
+                self.dict_st_bind[st_bind], 
+                it.st_other, 
+                it.st_shndx, 
+                it.name_str)
         return output
 
 '''
@@ -382,36 +372,37 @@ class ELF32SymTab:
 ######################################################################################
 '''
 
+Elf32_Rel_Item = namedtuple("Elf32_Rel", 'r_offset r_type, r_sym, type_str')
 class ELF32Rel:
-    dict_rel_type = {
-        22 : "R_ARM_JUMP_SLOT",
-        21 : "R_ARM_GLOB_DAT",
-        2 : "R_ARM_ABS32",
-        3 : "R_ARM_REL32",
-        23 : "R_ARM_RELATIVE",
-        20 : "R_ARM_COPY"
-    }
+    @classmethod
+    def type2str(cls, r_type):
+        rel_types = {
+            22 : "R_ARM_JUMP_SLOT",
+            21 : "R_ARM_GLOB_DAT",
+            2 : "R_ARM_ABS32",
+            3 : "R_ARM_REL32",
+            23 : "R_ARM_RELATIVE",
+            20 : "R_ARM_COPY"
+        }
+        return rel_types.get(r_type, str(hex(r_type)))
 
     def __init__(self, content, dynsym):
         self.rels = []
         self.dynsym = dynsym
         for idx in range(0, len(content), 8):
-            self.rels.append(struct.unpack('<II', content[idx:idx+8]))
-
-    def type2str(self, type):
-        return dict_search_safe(self.dict_rel_type, type)
+            r_offset, r_info = struct.unpack('<II', content[idx:idx+8])
+            r_type = r_info & 0xff
+            r_sym = r_info >> 8
+            self.rels.append(Elf32_Rel_Item(r_offset, r_type, r_sym, self.type2str(r_type)))
 
     def __str__(self):
         output = ""
         for it in self.rels:
-            (r_offset, r_info) = it
-            r_type = r_info & 0xff 
-            r_sym = r_info >> 8
-            if r_sym:
-                sym_name, sym_value = self.dynsym.get_sym(r_sym)
-                output += "%8x %6x,%02x %-20s %-8d %s\n" % (r_offset, r_sym, r_type, self.type2str(r_type), sym_value, sym_name)
-            else:
-                output += "%8x %6x,%02x %-20s\n" % (r_offset, r_sym, r_type, self.type2str(r_type))
+            output += "%8x %6x,%02x %-20s" % (it.r_offset, it.r_sym, it.r_type, it.type_str)
+            if it.r_sym:
+                sym_name, sym_value = self.dynsym.get_sym(it.r_sym)
+                output += " %-8d %s" % (sym_value, sym_name)
+            output += '\n'
         return output
 
 '''
@@ -492,17 +483,18 @@ class ELF32Dynamic:
             if t == tag:
                 return v
         return None
-    def type2str(self, type):
+    def type_str(self, type):
         return dict_search_safe(self.dict_dt_type, type)
     def __str__(self):
         output = ""
         for it in self.dyns:
-            output += "  %8x %-24s %x\n" % (it[0], '('+self.type2str(it[0])+')', it[1])
+            output += "  %8x %-24s %x\n" % (it[0], '('+self.type_str(it[0])+')', it[1])
         return output
 
 class ELFImage:
     def __init__(self, f):
         #self.fp = f
+        self.filename = f
         self._opener(f)
         self.segments = self.sections = []
         self._parse_eheader()
@@ -934,23 +926,68 @@ class MMFixer(ELFWriter):
         self._write_eheader(self.ehdr)
 
     def _fix_pheader(self):
-        # 0 LOAD .TEXT
-        # 1 LOAD .DATA
-        p = self.segments[0]
-        p.p_filesz = p.p_memsz
-
-        p = self.segments[1]
-        p.p_offset = p.p_vaddr
-
-        # 2 DYNAMIC .DYNAMIC
-        p = self.segments[2]
-        p.p_offset = p.p_vaddr
+        '''
+        set file_offset and file_size
+         0 LOAD .TEXT
+         1 LOAD .DATA
+        '''
+        for i,p in enumerate(self.segments):
+            if p.p_offset != p.p_vaddr:
+                print("FIX: section {}, type {}, offset {:x} -> {:x}".format(
+                    i, p.type_str(), p.p_offset, p.p_vaddr))
+                p.p_offset = p.p_vaddr
+            if p.p_filesz != p.p_memsz:
+                print("FIX: section {}, type {}, filesz {:x} -> {:x}".format(
+                    i, p.type_str(), p.p_filesz, p.p_memsz))
+                p.p_filesz = p.p_memsz
 
         self._write_pheader()
 
     def stage1(self):
         self._fix_eheader()
         self._fix_pheader()
+        self.fp.close()
+
+    def stage2(self):
+        def load_rel_section(sec_name):
+            sec_hdr = self.get_section_hdr(sec_name)
+            rel_sec = self.load_section(sec_name)
+            addr_list = range(sec_hdr.sh_offset, sec_hdr.sh_size + sec_hdr.sh_offset, 8)
+            #print(rel_sec)
+            #r = zip(addr_list, map(list, rel_sec.rels))
+            return rel_sec.rels
+
+        def may_patch(offset):
+            self.fp.seek(offset, 0)
+            symbol = struct.unpack('<I', self.fp.read(4))[0]
+            if  0xcba04000 < symbol < 0xcbc00000:
+                arm_relative_fix.append((addr, symbol - 0xcba04000))
+        
+        # first, .rel.dyn
+        rel_dyn = load_rel_section(".rel.dyn")
+        arm_relative_fix = []
+        for r in rel_dyn:
+            #print(r)
+            self.fp.seek(r.r_offset, 0)
+            symbol = struct.unpack('<I', self.fp.read(4))[0]
+            print('{:x} {:x} {:x}, {}'.format(r.r_offset, symbol, r.r_sym, r.r_type))
+            if r.r_type == 'R_ARM_RELATIVE':
+                arm_relative_fix.append((r.r_offset, symbol - 0xcba04000))
+
+        for addr in range(0x1a2d0, 0x1ab20,4):
+            may_patch(addr)
+
+        for addr in range(0x1ac48, 0x1b000, 4):
+            may_patch(addr)
+
+        self._write_list(arm_relative_fix)
+                
+
+        # second, handle the R_ARM_JUMP_SLOTs aka PLT (.rel.plt)
+        #rel_plt = load_rel_section(".rel.plt")
+        # for l in rel_plt:
+            # print(l)
+
         self.fp.close()
 
     def remove_init_func(self):
@@ -1185,32 +1222,42 @@ class MMFixer(ELFWriter):
         RELO_ABS = [ [ x[0] - base, x[1], x[3] ]  for x in rel if x[2] == 'ABS']
         fix_abs_relocation()
 
-import sys, os
+    def stage3(self):
+        '''
+        Require: file already done stage3
+        '''
+        self.remove_init_func()
+
+        self.fix_relocation(self.filename +".relo")
+        
+        base, entry = relocation.jni_address(self.filename, "JNI_OnLoad.log")
+        if entry > 0:
+            self.fix_JNI_OnLoad(entry)
+        self.fp.close()
+
+import sys, os, shutil
 def patch_elf(orig):
     path,ext = os.path.splitext(orig)
 
     # R1
-    src, dest = orig, path+"_r1"+ext
-    os.system("cp " + src + " " + dest)
-    print "\nPatch %s to %s" % (src, dest)
+    stg1 = path+"_r1" + ext
+    shutil.copyfile(orig, stg1)
+    print "\nPatch %s to %s" % (orig, stg1)
+    MMFixer(stg1).stage1()
 
-    m = MMFixer(dest)
-    m.stage1()
     # R2 - obsoleted
+    stg2 = path+"_r2" + ext
+    shutil.copyfile(stg1, stg2)
+    print "\nPatch %s to %s" % (stg1, stg2)
+    MMFixer(stg2).stage2()
+    return
 
     # R3
-    src, dest = dest, path+"_r3"+ext
-    os.system("cp " + src + " " + dest)
-    print "\nPatch %s to %s" % (src, dest)
+    stg3 = path+"_r3"+ext
+    shutil.copyfile(stg2, stg3)
+    print "\nPatch %s to %s" % (stg2, stg3)
+    MMFixer(dest).stage3()
 
-    m = MMFixer(dest)
-    m.remove_init_func()
-    m.fix_relocation(path+".relo")
-
-    base, entry = relocation.jni_address(orig, "JNI_OnLoad.log")
-    if entry > 0:
-        m.fix_JNI_OnLoad(entry)
-    m.fp.close()
 
 if __name__ == "__main__":
     default_target = "/Users/cpeng/Downloads/mm352/dump/libaspirecommon.so"
